@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/serial_example.dir/main.cpp.o -o serial_example  libhelios_serial.a 

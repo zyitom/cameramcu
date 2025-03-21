@@ -1,0 +1,17 @@
+[
+{
+  "directory": "/home/zyi/Desktop/cpp/serialca/build",
+  "command": "/usr/bin/c++  -I/home/zyi/Desktop/cpp/serialca/include -Wall -Wextra -Wpedantic -std=c++14 -o CMakeFiles/helios_serial.dir/src/Serial.cpp.o -c /home/zyi/Desktop/cpp/serialca/src/Serial.cpp",
+  "file": "/home/zyi/Desktop/cpp/serialca/src/Serial.cpp"
+},
+{
+  "directory": "/home/zyi/Desktop/cpp/serialca/build",
+  "command": "/usr/bin/c++  -I/home/zyi/Desktop/cpp/serialca/include -Wall -Wextra -Wpedantic -std=c++14 -o CMakeFiles/helios_serial.dir/src/CRC.cpp.o -c /home/zyi/Desktop/cpp/serialca/src/CRC.cpp",
+  "file": "/home/zyi/Desktop/cpp/serialca/src/CRC.cpp"
+},
+{
+  "directory": "/home/zyi/Desktop/cpp/serialca/build",
+  "command": "/usr/bin/c++  -I/home/zyi/Desktop/cpp/serialca/include -Wall -Wextra -Wpedantic -std=c++14 -o CMakeFiles/serial_example.dir/main.cpp.o -c /home/zyi/Desktop/cpp/serialca/main.cpp",
+  "file": "/home/zyi/Desktop/cpp/serialca/main.cpp"
+}
+]
