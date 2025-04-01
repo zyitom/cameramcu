@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/home/zyi/Desktop/cpp/serialca/include
+CXX_INCLUDES = -I/home/zyi/Desktop/serialca/include -I/home/zyi/Desktop/serialca/mindvision/src -I/home/zyi/Desktop/serialca/mindvision/3rdparty/MVSDK/include -isystem /usr/include/opencv4
 
 CXX_FLAGS = -Wall -Wextra -Wpedantic -std=c++14
 

@@ -1,8 +1,7 @@
-/home/zyi/Desktop/cpp/serialca/build/CMakeFiles/helios_serial.dir
-/home/zyi/Desktop/cpp/serialca/build/CMakeFiles/serial_example.dir
-/home/zyi/Desktop/cpp/serialca/build/CMakeFiles/edit_cache.dir
-/home/zyi/Desktop/cpp/serialca/build/CMakeFiles/rebuild_cache.dir
-/home/zyi/Desktop/cpp/serialca/build/CMakeFiles/list_install_components.dir
-/home/zyi/Desktop/cpp/serialca/build/CMakeFiles/install.dir
-/home/zyi/Desktop/cpp/serialca/build/CMakeFiles/install/local.dir
-/home/zyi/Desktop/cpp/serialca/build/CMakeFiles/install/strip.dir
+/home/zyi/Desktop/serialca/build/CMakeFiles/helios_serial.dir
+/home/zyi/Desktop/serialca/build/CMakeFiles/serial_example.dir
+/home/zyi/Desktop/serialca/build/CMakeFiles/edit_cache.dir
+/home/zyi/Desktop/serialca/build/CMakeFiles/rebuild_cache.dir
+/home/zyi/Desktop/serialca/build/mindvision/CMakeFiles/mindvision_input.dir
+/home/zyi/Desktop/serialca/build/mindvision/CMakeFiles/edit_cache.dir
+/home/zyi/Desktop/serialca/build/mindvision/CMakeFiles/rebuild_cache.dir

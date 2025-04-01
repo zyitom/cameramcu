@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/zyi/Desktop/cpp/serialca
+CMAKE_SOURCE_DIR = /home/zyi/Desktop/serialca
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/zyi/Desktop/cpp/serialca/build
+CMAKE_BINARY_DIR = /home/zyi/Desktop/serialca/build
 
 # Include any dependencies generated for this target.
 include CMakeFiles/serial_example.dir/depend.make
@@ -72,16 +72,16 @@ include CMakeFiles/serial_example.dir/flags.make
 CMakeFiles/serial_example.dir/main.cpp.o: CMakeFiles/serial_example.dir/flags.make
 CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp
 CMakeFiles/serial_example.dir/main.cpp.o: CMakeFiles/serial_example.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zyi/Desktop/cpp/serialca/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/serial_example.dir/main.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/serial_example.dir/main.cpp.o -MF CMakeFiles/serial_example.dir/main.cpp.o.d -o CMakeFiles/serial_example.dir/main.cpp.o -c /home/zyi/Desktop/cpp/serialca/main.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/serial_example.dir/main.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/serial_example.dir/main.cpp.o -MF CMakeFiles/serial_example.dir/main.cpp.o.d -o CMakeFiles/serial_example.dir/main.cpp.o -c /home/zyi/Desktop/serialca/main.cpp
 
 CMakeFiles/serial_example.dir/main.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/serial_example.dir/main.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zyi/Desktop/cpp/serialca/main.cpp > CMakeFiles/serial_example.dir/main.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zyi/Desktop/serialca/main.cpp > CMakeFiles/serial_example.dir/main.cpp.i
 
 CMakeFiles/serial_example.dir/main.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/serial_example.dir/main.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zyi/Desktop/cpp/serialca/main.cpp -o CMakeFiles/serial_example.dir/main.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zyi/Desktop/serialca/main.cpp -o CMakeFiles/serial_example.dir/main.cpp.s
 
 # Object files for target serial_example
 serial_example_OBJECTS = \
@@ -93,8 +93,65 @@ serial_example_EXTERNAL_OBJECTS =
 serial_example: CMakeFiles/serial_example.dir/main.cpp.o
 serial_example: CMakeFiles/serial_example.dir/build.make
 serial_example: libhelios_serial.a
+serial_example: mindvision/libmindvision_input.a
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_stitching.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_alphamat.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_aruco.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_barcode.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_bgsegm.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_bioinspired.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_ccalib.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_dnn_objdetect.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_dnn_superres.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_dpm.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_face.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_freetype.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_fuzzy.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_hdf.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_hfs.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_img_hash.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_intensity_transform.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_line_descriptor.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_mcc.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_quality.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_rapid.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_reg.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_rgbd.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_saliency.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_shape.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_stereo.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_structured_light.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_phase_unwrapping.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_superres.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_optflow.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_surface_matching.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_tracking.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_highgui.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_datasets.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_plot.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_text.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_ml.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_videostab.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_videoio.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_viz.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_wechat_qrcode.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_ximgproc.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_video.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_xobjdetect.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_imgcodecs.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_objdetect.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_calib3d.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_dnn.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_features2d.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_flann.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_xphoto.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_photo.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_imgproc.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libopencv_core.so.4.5.4d
+serial_example: /usr/lib/x86_64-linux-gnu/libyaml-cpp.so.0.7.0
+serial_example: /usr/lib/libMVSDK.so
 serial_example: CMakeFiles/serial_example.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/zyi/Desktop/cpp/serialca/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable serial_example"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable serial_example"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/serial_example.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -106,6 +163,6 @@ CMakeFiles/serial_example.dir/clean:
 .PHONY : CMakeFiles/serial_example.dir/clean
 
 CMakeFiles/serial_example.dir/depend:
-	cd /home/zyi/Desktop/cpp/serialca/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/zyi/Desktop/cpp/serialca /home/zyi/Desktop/cpp/serialca /home/zyi/Desktop/cpp/serialca/build /home/zyi/Desktop/cpp/serialca/build /home/zyi/Desktop/cpp/serialca/build/CMakeFiles/serial_example.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/zyi/Desktop/serialca/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/zyi/Desktop/serialca /home/zyi/Desktop/serialca /home/zyi/Desktop/serialca/build /home/zyi/Desktop/serialca/build /home/zyi/Desktop/serialca/build/CMakeFiles/serial_example.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/serial_example.dir/depend
 

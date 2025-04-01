@@ -285,8 +285,424 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
   /usr/include/c++/11/bits/basic_ios.tcc \
   /usr/include/c++/11/bits/ostream.tcc \
   /usr/include/c++/11/istream \
-  /usr/include/c++/11/bits/istream.tcc
+  /usr/include/c++/11/bits/istream.tcc \
+  /usr/include/c++/11/iomanip \
+  /usr/include/c++/11/locale \
+  /usr/include/c++/11/bits/locale_facets_nonio.h \
+  /usr/include/x86_64-linux-gnu/c++/11/bits/time_members.h \
+  /usr/include/x86_64-linux-gnu/c++/11/bits/messages_members.h \
+  /usr/include/libintl.h \
+  /usr/include/c++/11/bits/codecvt.h \
+  /usr/include/c++/11/bits/locale_facets_nonio.tcc \
+  /usr/include/c++/11/bits/locale_conv.h \
+  /usr/include/c++/11/bits/quoted_string.h \
+  /usr/include/c++/11/sstream \
+  /usr/include/c++/11/bits/sstream.tcc \
+  ../mindvision/src/MVCameraInput.h \
+  ../mindvision/src/ImageInput.h \
+  /usr/include/opencv4/opencv2/opencv.hpp \
+  /usr/include/opencv4/opencv2/opencv_modules.hpp \
+  /usr/include/opencv4/opencv2/core.hpp \
+  /usr/include/opencv4/opencv2/core/cvdef.h \
+  /usr/include/opencv4/opencv2/core/version.hpp \
+  /usr/include/opencv4/opencv2/core/hal/interface.h \
+  /usr/include/c++/11/cstddef \
+  /usr/include/opencv4/opencv2/core/cv_cpu_dispatch.h \
+  /usr/lib/gcc/x86_64-linux-gnu/11/include/emmintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/11/include/xmmintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/11/include/mmintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/11/include/mm_malloc.h \
+  /usr/include/c++/11/stdlib.h \
+  /usr/include/opencv4/opencv2/core/base.hpp \
+  /usr/include/c++/11/climits \
+  /usr/lib/gcc/x86_64-linux-gnu/11/include/limits.h \
+  /usr/lib/gcc/x86_64-linux-gnu/11/include/syslimits.h \
+  /usr/include/limits.h \
+  /usr/include/x86_64-linux-gnu/bits/posix1_lim.h \
+  /usr/include/x86_64-linux-gnu/bits/local_lim.h \
+  /usr/include/linux/limits.h \
+  /usr/include/x86_64-linux-gnu/bits/posix2_lim.h \
+  /usr/include/x86_64-linux-gnu/bits/xopen_lim.h \
+  /usr/include/x86_64-linux-gnu/bits/uio_lim.h \
+  /usr/include/c++/11/algorithm \
+  /usr/include/c++/11/bits/stl_algo.h \
+  /usr/include/c++/11/bits/algorithmfwd.h \
+  /usr/include/c++/11/bits/uniform_int_dist.h \
+  /usr/include/opencv4/opencv2/core/cvstd.hpp \
+  /usr/include/opencv4/opencv2/core/cvstd_wrapper.hpp \
+  /usr/include/opencv4/opencv2/core/neon_utils.hpp \
+  /usr/include/opencv4/opencv2/core/vsx_utils.hpp \
+  /usr/include/assert.h \
+  /usr/include/opencv4/opencv2/core/check.hpp \
+  /usr/include/opencv4/opencv2/core/traits.hpp \
+  /usr/include/opencv4/opencv2/core/matx.hpp \
+  /usr/include/opencv4/opencv2/core/saturate.hpp \
+  /usr/include/opencv4/opencv2/core/fast_math.hpp \
+  /usr/include/opencv4/opencv2/core/types.hpp \
+  /usr/include/c++/11/cfloat \
+  /usr/lib/gcc/x86_64-linux-gnu/11/include/float.h \
+  /usr/include/opencv4/opencv2/core/mat.hpp \
+  /usr/include/opencv4/opencv2/core/bufferpool.hpp \
+  /usr/include/opencv4/opencv2/core/mat.inl.hpp \
+  /usr/include/opencv4/opencv2/core/persistence.hpp \
+  /usr/include/opencv4/opencv2/core/operations.hpp \
+  /usr/include/opencv4/opencv2/core/cvstd.inl.hpp \
+  /usr/include/c++/11/complex \
+  /usr/include/opencv4/opencv2/core/utility.hpp \
+  /usr/include/opencv4/opencv2/core/optim.hpp \
+  /usr/include/opencv4/opencv2/core/ovx.hpp \
+  /usr/include/opencv4/opencv2/core/cvdef.h \
+  /usr/include/opencv4/opencv2/calib3d.hpp \
+  /usr/include/opencv4/opencv2/features2d.hpp \
+  /usr/include/opencv4/opencv2/flann/miniflann.hpp \
+  /usr/include/opencv4/opencv2/flann/defines.h \
+  /usr/include/opencv4/opencv2/flann/config.h \
+  /usr/include/opencv4/opencv2/core/affine.hpp \
+  /usr/include/opencv4/opencv2/dnn.hpp \
+  /usr/include/opencv4/opencv2/dnn/dnn.hpp \
+  /usr/include/opencv4/opencv2/core/async.hpp \
+  /usr/include/opencv4/opencv2/dnn/version.hpp \
+  /usr/include/opencv4/opencv2/dnn/dict.hpp \
+  /usr/include/c++/11/map \
+  /usr/include/c++/11/bits/stl_tree.h \
+  /usr/include/c++/11/bits/stl_map.h \
+  /usr/include/c++/11/bits/stl_multimap.h \
+  /usr/include/opencv4/opencv2/dnn/layer.hpp \
+  /usr/include/opencv4/opencv2/dnn/dnn.inl.hpp \
+  /usr/include/opencv4/opencv2/dnn/utils/inference_engine.hpp \
+  /usr/include/opencv4/opencv2/dnn/dnn.hpp \
+  /usr/include/opencv4/opencv2/flann.hpp \
+  /usr/include/opencv4/opencv2/flann/flann_base.hpp \
+  /usr/include/opencv4/opencv2/flann/general.h \
+  /usr/include/opencv4/opencv2/flann/matrix.h \
+  /usr/include/opencv4/opencv2/flann/params.h \
+  /usr/include/opencv4/opencv2/flann/any.h \
+  /usr/include/opencv4/opencv2/flann/defines.h \
+  /usr/include/opencv4/opencv2/flann/saving.h \
+  /usr/include/opencv4/opencv2/flann/nn_index.h \
+  /usr/include/opencv4/opencv2/flann/result_set.h \
+  /usr/include/c++/11/set \
+  /usr/include/c++/11/bits/stl_set.h \
+  /usr/include/c++/11/bits/stl_multiset.h \
+  /usr/include/opencv4/opencv2/flann/all_indices.h \
+  /usr/include/opencv4/opencv2/flann/kdtree_index.h \
+  /usr/include/opencv4/opencv2/flann/dynamic_bitset.h \
+  /usr/include/opencv4/opencv2/flann/dist.h \
+  /usr/include/opencv4/opencv2/flann/heap.h \
+  /usr/include/opencv4/opencv2/flann/allocator.h \
+  /usr/include/opencv4/opencv2/flann/random.h \
+  /usr/include/opencv4/opencv2/flann/kdtree_single_index.h \
+  /usr/include/opencv4/opencv2/flann/kmeans_index.h \
+  /usr/include/opencv4/opencv2/flann/logger.h \
+  /usr/include/opencv4/opencv2/flann/composite_index.h \
+  /usr/include/opencv4/opencv2/flann/linear_index.h \
+  /usr/include/opencv4/opencv2/flann/hierarchical_clustering_index.h \
+  /usr/include/opencv4/opencv2/flann/lsh_index.h \
+  /usr/include/opencv4/opencv2/flann/lsh_table.h \
+  /usr/include/c++/11/math.h \
+  /usr/include/opencv4/opencv2/flann/autotuned_index.h \
+  /usr/include/opencv4/opencv2/flann/ground_truth.h \
+  /usr/include/opencv4/opencv2/flann/index_testing.h \
+  /usr/include/opencv4/opencv2/flann/timer.h \
+  /usr/include/opencv4/opencv2/flann/sampling.h \
+  /usr/include/opencv4/opencv2/highgui.hpp \
+  /usr/include/opencv4/opencv2/imgcodecs.hpp \
+  /usr/include/opencv4/opencv2/videoio.hpp \
+  /usr/include/opencv4/opencv2/imgproc.hpp \
+  /usr/include/opencv4/opencv2/imgproc/segmentation.hpp \
+  /usr/include/opencv4/opencv2/ml.hpp \
+  /usr/include/opencv4/opencv2/ml/ml.inl.hpp \
+  /usr/include/opencv4/opencv2/objdetect.hpp \
+  /usr/include/opencv4/opencv2/objdetect/detection_based_tracker.hpp \
+  /usr/include/opencv4/opencv2/objdetect/face.hpp \
+  /usr/include/opencv4/opencv2/photo.hpp \
+  /usr/include/opencv4/opencv2/stitching.hpp \
+  /usr/include/opencv4/opencv2/stitching/warpers.hpp \
+  /usr/include/opencv4/opencv2/stitching/detail/warpers.hpp \
+  /usr/include/opencv4/opencv2/core/cuda.hpp \
+  /usr/include/opencv4/opencv2/core/cuda_types.hpp \
+  /usr/include/opencv4/opencv2/core/cuda.inl.hpp \
+  /usr/include/opencv4/opencv2/stitching/detail/warpers_inl.hpp \
+  /usr/include/opencv4/opencv2/stitching/detail/warpers.hpp \
+  /usr/include/opencv4/opencv2/stitching/detail/matchers.hpp \
+  /usr/include/opencv4/opencv2/stitching/detail/motion_estimators.hpp \
+  /usr/include/opencv4/opencv2/stitching/detail/matchers.hpp \
+  /usr/include/opencv4/opencv2/stitching/detail/util.hpp \
+  /usr/include/c++/11/list \
+  /usr/include/c++/11/bits/stl_list.h \
+  /usr/include/c++/11/bits/list.tcc \
+  /usr/include/opencv4/opencv2/stitching/detail/util_inl.hpp \
+  /usr/include/opencv4/opencv2/stitching/detail/camera.hpp \
+  /usr/include/opencv4/opencv2/stitching/detail/exposure_compensate.hpp \
+  /usr/include/opencv4/opencv2/stitching/detail/seam_finders.hpp \
+  /usr/include/opencv4/opencv2/stitching/detail/blenders.hpp \
+  /usr/include/opencv4/opencv2/stitching/detail/camera.hpp \
+  /usr/include/opencv4/opencv2/video.hpp \
+  /usr/include/opencv4/opencv2/video/tracking.hpp \
+  /usr/include/opencv4/opencv2/video/background_segm.hpp \
+  ../mindvision/3rdparty/MVSDK/include/CameraApi.h \
+  ../mindvision/3rdparty/MVSDK/include/CameraDefine.h \
+  ../mindvision/3rdparty/MVSDK/include/CameraStatus.h \
+  /usr/include/yaml-cpp/yaml.h \
+  /usr/include/yaml-cpp/parser.h \
+  /usr/include/yaml-cpp/dll.h \
+  /usr/include/yaml-cpp/emitter.h \
+  /usr/include/yaml-cpp/binary.h \
+  /usr/include/yaml-cpp/emitterdef.h \
+  /usr/include/yaml-cpp/emittermanip.h \
+  /usr/include/yaml-cpp/null.h \
+  /usr/include/yaml-cpp/ostream_wrapper.h \
+  /usr/include/yaml-cpp/emitterstyle.h \
+  /usr/include/yaml-cpp/stlemitter.h \
+  /usr/include/yaml-cpp/exceptions.h \
+  /usr/include/yaml-cpp/mark.h \
+  /usr/include/yaml-cpp/noexcept.h \
+  /usr/include/yaml-cpp/traits.h \
+  /usr/include/yaml-cpp/node/node.h \
+  /usr/include/yaml-cpp/node/detail/iterator_fwd.h \
+  /usr/include/yaml-cpp/node/ptr.h \
+  /usr/include/yaml-cpp/node/type.h \
+  /usr/include/yaml-cpp/node/impl.h \
+  /usr/include/yaml-cpp/node/detail/memory.h \
+  /usr/include/yaml-cpp/node/detail/node.h \
+  /usr/include/yaml-cpp/node/detail/node_ref.h \
+  /usr/include/yaml-cpp/node/detail/node_data.h \
+  /usr/include/yaml-cpp/node/detail/node_iterator.h \
+  /usr/include/c++/11/iterator \
+  /usr/include/c++/11/bits/stream_iterator.h \
+  /usr/include/yaml-cpp/node/iterator.h \
+  /usr/include/yaml-cpp/node/detail/iterator.h \
+  /usr/include/yaml-cpp/node/convert.h \
+  /usr/include/yaml-cpp/node/detail/impl.h \
+  /usr/include/yaml-cpp/node/parse.h \
+  /usr/include/yaml-cpp/node/emit.h
 
+
+/usr/include/yaml-cpp/node/emit.h:
+
+/usr/include/yaml-cpp/node/parse.h:
+
+/usr/include/yaml-cpp/node/convert.h:
+
+/usr/include/yaml-cpp/node/iterator.h:
+
+/usr/include/c++/11/bits/stream_iterator.h:
+
+/usr/include/yaml-cpp/node/detail/node_data.h:
+
+/usr/include/yaml-cpp/node/detail/memory.h:
+
+/usr/include/yaml-cpp/node/impl.h:
+
+/usr/include/yaml-cpp/node/detail/node.h:
+
+/usr/include/yaml-cpp/node/detail/iterator_fwd.h:
+
+/usr/include/yaml-cpp/node/node.h:
+
+/usr/include/yaml-cpp/traits.h:
+
+/usr/include/yaml-cpp/mark.h:
+
+/usr/include/yaml-cpp/exceptions.h:
+
+/usr/include/yaml-cpp/emittermanip.h:
+
+/usr/include/yaml-cpp/emitterdef.h:
+
+/usr/include/yaml-cpp/binary.h:
+
+/usr/include/yaml-cpp/yaml.h:
+
+../mindvision/3rdparty/MVSDK/include/CameraStatus.h:
+
+../mindvision/3rdparty/MVSDK/include/CameraDefine.h:
+
+/usr/include/yaml-cpp/node/detail/impl.h:
+
+/usr/include/opencv4/opencv2/video/background_segm.hpp:
+
+/usr/include/opencv4/opencv2/video.hpp:
+
+/usr/include/opencv4/opencv2/stitching/detail/seam_finders.hpp:
+
+/usr/include/c++/11/bits/list.tcc:
+
+/usr/include/c++/11/list:
+
+/usr/include/yaml-cpp/emitterstyle.h:
+
+/usr/include/opencv4/opencv2/stitching/detail/warpers_inl.hpp:
+
+/usr/include/opencv4/opencv2/core/cuda_types.hpp:
+
+/usr/include/opencv4/opencv2/objdetect/face.hpp:
+
+/usr/include/opencv4/opencv2/objdetect/detection_based_tracker.hpp:
+
+/usr/include/opencv4/opencv2/ml/ml.inl.hpp:
+
+/usr/include/opencv4/opencv2/imgproc/segmentation.hpp:
+
+/usr/include/opencv4/opencv2/imgcodecs.hpp:
+
+/usr/include/opencv4/opencv2/highgui.hpp:
+
+/usr/include/opencv4/opencv2/flann/ground_truth.h:
+
+/usr/include/c++/11/math.h:
+
+/usr/include/opencv4/opencv2/flann/lsh_table.h:
+
+/usr/include/opencv4/opencv2/flann/hierarchical_clustering_index.h:
+
+/usr/include/opencv4/opencv2/flann/kdtree_single_index.h:
+
+/usr/include/opencv4/opencv2/flann/allocator.h:
+
+/usr/include/opencv4/opencv2/flann/heap.h:
+
+/usr/include/opencv4/opencv2/flann/dist.h:
+
+/usr/include/opencv4/opencv2/flann/dynamic_bitset.h:
+
+/usr/include/opencv4/opencv2/flann/kdtree_index.h:
+
+/usr/include/opencv4/opencv2/flann/all_indices.h:
+
+/usr/include/c++/11/bits/stl_multiset.h:
+
+/usr/include/c++/11/set:
+
+/usr/include/opencv4/opencv2/flann/result_set.h:
+
+/usr/include/opencv4/opencv2/flann/nn_index.h:
+
+/usr/include/opencv4/opencv2/flann/any.h:
+
+/usr/include/opencv4/opencv2/flann/params.h:
+
+/usr/include/opencv4/opencv2/flann/index_testing.h:
+
+/usr/include/opencv4/opencv2/flann/matrix.h:
+
+/usr/include/opencv4/opencv2/flann/general.h:
+
+/usr/include/opencv4/opencv2/flann.hpp:
+
+/usr/include/c++/11/bits/stl_map.h:
+
+/usr/include/c++/11/map:
+
+/usr/include/opencv4/opencv2/dnn/version.hpp:
+
+/usr/include/opencv4/opencv2/core/async.hpp:
+
+/usr/include/opencv4/opencv2/dnn/dnn.hpp:
+
+/usr/include/opencv4/opencv2/dnn.hpp:
+
+/usr/include/opencv4/opencv2/imgproc.hpp:
+
+/usr/include/opencv4/opencv2/flann/config.h:
+
+/usr/include/opencv4/opencv2/flann/defines.h:
+
+/usr/include/opencv4/opencv2/features2d.hpp:
+
+/usr/include/opencv4/opencv2/calib3d.hpp:
+
+/usr/include/opencv4/opencv2/core/optim.hpp:
+
+/usr/include/opencv4/opencv2/video/tracking.hpp:
+
+/usr/include/opencv4/opencv2/core/operations.hpp:
+
+/usr/include/opencv4/opencv2/core/bufferpool.hpp:
+
+/usr/lib/gcc/x86_64-linux-gnu/11/include/float.h:
+
+/usr/include/opencv4/opencv2/core/fast_math.hpp:
+
+/usr/include/opencv4/opencv2/core/saturate.hpp:
+
+/usr/include/opencv4/opencv2/core/matx.hpp:
+
+/usr/include/opencv4/opencv2/core/traits.hpp:
+
+/usr/include/opencv4/opencv2/core/check.hpp:
+
+/usr/include/assert.h:
+
+/usr/include/opencv4/opencv2/core/neon_utils.hpp:
+
+/usr/include/opencv4/opencv2/core/cvstd_wrapper.hpp:
+
+/usr/include/opencv4/opencv2/core/cvstd.hpp:
+
+/usr/include/c++/11/bits/algorithmfwd.h:
+
+/usr/include/c++/11/bits/stl_algo.h:
+
+/usr/include/c++/11/algorithm:
+
+/usr/include/x86_64-linux-gnu/bits/xopen_lim.h:
+
+/usr/include/x86_64-linux-gnu/bits/posix2_lim.h:
+
+/usr/include/x86_64-linux-gnu/bits/local_lim.h:
+
+/usr/include/x86_64-linux-gnu/bits/posix1_lim.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/11/include/limits.h:
+
+/usr/include/opencv4/opencv2/core/base.hpp:
+
+/usr/include/c++/11/stdlib.h:
+
+/usr/include/opencv4/opencv2/stitching/warpers.hpp:
+
+/usr/include/opencv4/opencv2/stitching.hpp:
+
+/usr/lib/gcc/x86_64-linux-gnu/11/include/mmintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/11/include/xmmintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/11/include/emmintrin.h:
+
+/usr/include/opencv4/opencv2/core/cv_cpu_dispatch.h:
+
+/usr/include/opencv4/opencv2/core/hal/interface.h:
+
+/usr/include/opencv4/opencv2/core.hpp:
+
+/usr/include/opencv4/opencv2/opencv_modules.hpp:
+
+/usr/include/opencv4/opencv2/opencv.hpp:
+
+../mindvision/src/ImageInput.h:
+
+/usr/include/c++/11/sstream:
+
+/usr/include/c++/11/bits/quoted_string.h:
+
+/usr/include/c++/11/bits/locale_conv.h:
+
+/usr/include/opencv4/opencv2/flann/composite_index.h:
+
+/usr/include/c++/11/bits/locale_facets_nonio.tcc:
+
+/usr/include/opencv4/opencv2/stitching/detail/exposure_compensate.hpp:
+
+/usr/include/libintl.h:
+
+/usr/include/opencv4/opencv2/flann/timer.h:
+
+/usr/include/x86_64-linux-gnu/c++/11/bits/messages_members.h:
+
+/usr/include/x86_64-linux-gnu/c++/11/bits/time_members.h:
+
+/usr/include/c++/11/bits/locale_facets_nonio.h:
 
 /usr/include/c++/11/bits/istream.tcc:
 
@@ -304,6 +720,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/cwctype:
 
+/usr/include/c++/11/bits/uniform_int_dist.h:
+
 /usr/include/c++/11/bits/basic_ios.h:
 
 /usr/include/c++/11/streambuf:
@@ -314,9 +732,15 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/ostream:
 
+/usr/include/c++/11/bits/stl_list.h:
+
+/usr/include/opencv4/opencv2/flann/saving.h:
+
 /usr/include/x86_64-linux-gnu/bits/iscanonical.h:
 
 /usr/include/x86_64-linux-gnu/bits/mathcalls.h:
+
+/usr/include/opencv4/opencv2/core/utility.hpp:
 
 /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h:
 
@@ -334,11 +758,15 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h:
 
+/usr/include/opencv4/opencv2/core/affine.hpp:
+
 /usr/include/x86_64-linux-gnu/bits/thread-shared-types.h:
 
 /usr/include/c++/11/ext/new_allocator.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/timer_t.h:
+
+/usr/include/opencv4/opencv2/stitching/detail/blenders.hpp:
 
 /usr/include/c++/11/ext/atomicity.h:
 
@@ -356,11 +784,17 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/ext/concurrence.h:
 
+/usr/include/linux/limits.h:
+
 /usr/include/c++/11/bits/shared_ptr_base.h:
 
 /usr/include/c++/11/bits/basic_string.h:
 
+/usr/include/opencv4/opencv2/dnn/utils/inference_engine.hpp:
+
 /usr/include/x86_64-linux-gnu/bits/endianness.h:
+
+/usr/include/opencv4/opencv2/stitching/detail/matchers.hpp:
 
 /usr/include/x86_64-linux-gnu/bits/locale.h:
 
@@ -384,11 +818,15 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_tm.h:
 
+/usr/include/yaml-cpp/node/detail/iterator.h:
+
 /usr/include/c++/11/bits/stringfwd.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/FILE.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h:
+
+/usr/include/opencv4/opencv2/flann/logger.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/wint_t.h:
 
@@ -400,6 +838,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/wchar.h:
 
+/usr/include/yaml-cpp/parser.h:
+
 /usr/include/c++/11/bits/cxxabi_init_exception.h:
 
 /usr/include/c++/11/cwchar:
@@ -409,6 +849,10 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/x86_64-linux-gnu/bits/stdio_lim.h:
 
 /usr/include/x86_64-linux-gnu/bits/timex.h:
+
+/usr/include/opencv4/opencv2/stitching/detail/util.hpp:
+
+/usr/include/opencv4/opencv2/flann/lsh_index.h:
 
 /usr/include/c++/11/bits/invoke.h:
 
@@ -426,9 +870,15 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/struct_rwlock.h:
 
+/usr/include/opencv4/opencv2/core/cuda.inl.hpp:
+
 /usr/include/strings.h:
 
+/usr/include/x86_64-linux-gnu/bits/uio_lim.h:
+
 /usr/include/c++/11/string:
+
+/usr/include/opencv4/opencv2/dnn/dnn.inl.hpp:
 
 /usr/include/c++/11/backward/binders.h:
 
@@ -436,7 +886,11 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/select.h:
 
+/usr/include/yaml-cpp/null.h:
+
 /usr/include/c++/11/bits/deque.tcc:
+
+/usr/include/c++/11/bits/stl_set.h:
 
 /usr/include/x86_64-linux-gnu/bits/struct_stat.h:
 
@@ -446,6 +900,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/unistd.h:
 
+/usr/include/yaml-cpp/ostream_wrapper.h:
+
 /usr/include/x86_64-linux-gnu/gnu/stubs-64.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h:
@@ -454,9 +910,15 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/confname.h:
 
+/usr/include/opencv4/opencv2/flann/linear_index.h:
+
+/usr/include/c++/11/iomanip:
+
 /usr/include/c++/11/cctype:
 
 /usr/include/c++/11/unordered_map:
+
+/usr/include/c++/11/cfloat:
 
 /usr/include/x86_64-linux-gnu/bits/stdint-intn.h:
 
@@ -471,6 +933,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/c++/11/tuple:
 
 /usr/include/x86_64-linux-gnu/bits/types/clock_t.h:
+
+/usr/include/c++/11/bits/stl_multimap.h:
 
 ../main.cpp:
 
@@ -504,9 +968,13 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/sched.h:
 
+/usr/include/opencv4/opencv2/core/mat.hpp:
+
 /usr/include/x86_64-linux-gnu/bits/waitstatus.h:
 
 /usr/include/c++/11/cstdint:
+
+/usr/include/c++/11/locale:
 
 /usr/include/ctype.h:
 
@@ -526,7 +994,11 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/linux/close_range.h:
 
+/usr/include/yaml-cpp/node/detail/node_iterator.h:
+
 /usr/include/x86_64-linux-gnu/bits/timesize.h:
+
+/usr/include/c++/11/complex:
 
 /usr/include/x86_64-linux-gnu/c++/11/bits/cpu_defines.h:
 
@@ -538,6 +1010,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/linux/errno.h:
 
+/usr/lib/gcc/x86_64-linux-gnu/11/include/syslimits.h:
+
 /usr/include/c++/11/debug/debug.h:
 
 /usr/include/features-time64.h:
@@ -546,7 +1020,11 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/termios-struct.h:
 
+/usr/include/limits.h:
+
 /usr/include/c++/11/bits/stl_relops.h:
+
+/usr/include/opencv4/opencv2/flann/autotuned_index.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h:
 
@@ -556,9 +1034,19 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/asm/ioctls.h:
 
+/usr/include/opencv4/opencv2/ml.hpp:
+
 /usr/include/c++/11/ext/numeric_traits.h:
 
+/usr/include/yaml-cpp/node/type.h:
+
+/usr/include/opencv4/opencv2/videoio.hpp:
+
 /usr/include/c++/11/bits/atomic_base.h:
+
+/usr/include/opencv4/opencv2/stitching/detail/motion_estimators.hpp:
+
+/usr/include/opencv4/opencv2/core/ovx.hpp:
 
 /usr/include/x86_64-linux-gnu/bits/endian.h:
 
@@ -580,9 +1068,17 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/initializer_list:
 
+/usr/include/c++/11/climits:
+
+/usr/include/c++/11/bits/sstream.tcc:
+
 /usr/include/x86_64-linux-gnu/bits/termios-tcflow.h:
 
 /usr/include/c++/11/new:
+
+/usr/include/yaml-cpp/node/ptr.h:
+
+/usr/include/opencv4/opencv2/stitching/detail/warpers.hpp:
 
 /usr/include/x86_64-linux-gnu/bits/struct_mutex.h:
 
@@ -604,6 +1100,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/bits/stl_iterator_base_types.h:
 
+/usr/include/opencv4/opencv2/core/version.hpp:
+
 /usr/include/c++/11/cstdlib:
 
 /usr/include/c++/11/bit:
@@ -618,11 +1116,15 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/bits/predefined_ops.h:
 
+/usr/include/opencv4/opencv2/stitching/detail/util_inl.hpp:
+
 /usr/include/x86_64-linux-gnu/bits/wchar.h:
 
 /usr/include/c++/11/bits/locale_facets.h:
 
 /usr/include/c++/11/bits/exception.h:
+
+/usr/include/c++/11/iterator:
 
 /usr/include/x86_64-linux-gnu/bits/floatn.h:
 
@@ -630,19 +1132,27 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/pthreadtypes.h:
 
+/usr/include/opencv4/opencv2/core/cvstd.inl.hpp:
+
 /usr/include/c++/11/bits/allocated_ptr.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h:
 
 /usr/include/c++/11/typeinfo:
 
+/usr/include/yaml-cpp/dll.h:
+
 /usr/include/c++/11/bits/exception_ptr.h:
 
 /usr/include/stdlib.h:
 
+/usr/include/opencv4/opencv2/stitching/detail/camera.hpp:
+
 /usr/include/x86_64-linux-gnu/bits/waitflags.h:
 
 /usr/include/x86_64-linux-gnu/bits/byteswap.h:
+
+../mindvision/3rdparty/MVSDK/include/CameraApi.h:
 
 /usr/include/c++/11/bits/stl_construct.h:
 
@@ -650,9 +1160,13 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/uintn-identity.h:
 
+/usr/include/opencv4/opencv2/flann/sampling.h:
+
 /usr/include/x86_64-linux-gnu/bits/stdlib-float.h:
 
 /usr/include/alloca.h:
+
+/usr/include/yaml-cpp/emitter.h:
 
 /usr/include/c++/11/cstdio:
 
@@ -678,7 +1192,11 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/bits/basic_string.tcc:
 
+/usr/include/opencv4/opencv2/dnn/layer.hpp:
+
 /usr/include/c++/11/bits/stl_uninitialized.h:
+
+/usr/include/opencv4/opencv2/core/types.hpp:
 
 /usr/include/x86_64-linux-gnu/gnu/stubs.h:
 
@@ -690,7 +1208,11 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/getopt_core.h:
 
+/usr/include/c++/11/cstddef:
+
 /usr/include/c++/11/bits/stl_vector.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/11/include/mm_malloc.h:
 
 /usr/include/c++/11/system_error:
 
@@ -702,11 +1224,15 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/bits/vector.tcc:
 
+/usr/include/opencv4/opencv2/flann/miniflann.hpp:
+
 /usr/include/c++/11/bits/std_abs.h:
 
 /usr/include/c++/11/bits/stl_heap.h:
 
 /usr/include/c++/11/memory:
+
+/usr/include/opencv4/opencv2/objdetect.hpp:
 
 /usr/include/c++/11/bits/stl_raw_storage_iter.h:
 
@@ -724,15 +1250,25 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/bits/parse_numbers.h:
 
+/usr/include/yaml-cpp/noexcept.h:
+
 /usr/include/c++/11/bits/atomic_lockfree_defines.h:
 
 /usr/include/c++/11/bits/hashtable.h:
 
 /usr/include/c++/11/bits/hashtable_policy.h:
 
+/usr/include/opencv4/opencv2/flann/kmeans_index.h:
+
+/usr/include/opencv4/opencv2/core/persistence.hpp:
+
+/usr/include/c++/11/bits/codecvt.h:
+
 /usr/include/c++/11/bits/basic_ios.tcc:
 
 /usr/include/c++/11/bits/enable_special_members.h:
+
+/usr/include/opencv4/opencv2/photo.hpp:
 
 /usr/include/c++/11/bits/ptr_traits.h:
 
@@ -741,6 +1277,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/endian.h:
 
 /usr/include/c++/11/bits/erase_if.h:
+
+/usr/include/yaml-cpp/stlemitter.h:
 
 /usr/include/c++/11/bits/cpp_type_traits.h:
 
@@ -766,6 +1304,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/stdexcept:
 
+/usr/include/opencv4/opencv2/core/cvdef.h:
+
 /usr/include/c++/11/bits/uses_allocator.h:
 
 /usr/include/c++/11/bits/unique_lock.h:
@@ -776,13 +1316,19 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/future:
 
+/usr/include/yaml-cpp/node/detail/node_ref.h:
+
 /usr/include/c++/11/ext/string_conversions.h:
 
 /usr/include/c++/11/bits/atomic_futex.h:
 
+/usr/include/opencv4/opencv2/dnn/dict.hpp:
+
 /usr/include/c++/11/bits/streambuf.tcc:
 
 /usr/include/string.h:
+
+/usr/include/opencv4/opencv2/core/mat.inl.hpp:
 
 /usr/include/termios.h:
 
@@ -792,11 +1338,17 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/termios-c_iflag.h:
 
+/usr/include/opencv4/opencv2/flann/random.h:
+
 /usr/include/x86_64-linux-gnu/bits/termios-c_cflag.h:
 
 /usr/include/x86_64-linux-gnu/bits/math-vector.h:
 
+/usr/include/opencv4/opencv2/core/vsx_utils.hpp:
+
 /usr/include/x86_64-linux-gnu/bits/termios-c_lflag.h:
+
+/usr/include/opencv4/opencv2/flann/flann_base.hpp:
 
 /usr/include/x86_64-linux-gnu/bits/termios-misc.h:
 
@@ -816,6 +1368,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/environments.h:
 
+/usr/include/opencv4/opencv2/core/cuda.hpp:
+
 /usr/include/x86_64-linux-gnu/bits/setjmp.h:
 
 /usr/include/time.h:
@@ -824,6 +1378,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/unistd_ext.h:
 
+/usr/include/c++/11/bits/stl_tree.h:
+
 /usr/include/x86_64-linux-gnu/sys/ioctl.h:
 
 /usr/include/c++/11/bits/ios_base.h:
@@ -831,6 +1387,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/x86_64-linux-gnu/bits/ioctls.h:
 
 /usr/include/asm-generic/ioctls.h:
+
+../mindvision/src/MVCameraInput.h:
 
 /usr/include/c++/11/bits/std_function.h:
 

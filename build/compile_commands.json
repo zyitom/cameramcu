@@ -1,17 +1,27 @@
 [
 {
-  "directory": "/home/zyi/Desktop/cpp/serialca/build",
-  "command": "/usr/bin/c++  -I/home/zyi/Desktop/cpp/serialca/include -Wall -Wextra -Wpedantic -std=c++14 -o CMakeFiles/helios_serial.dir/src/Serial.cpp.o -c /home/zyi/Desktop/cpp/serialca/src/Serial.cpp",
-  "file": "/home/zyi/Desktop/cpp/serialca/src/Serial.cpp"
+  "directory": "/home/zyi/Desktop/serialca/build",
+  "command": "/usr/bin/c++  -I/home/zyi/Desktop/serialca/include -Wall -Wextra -Wpedantic -std=c++14 -o CMakeFiles/helios_serial.dir/src/Serial.cpp.o -c /home/zyi/Desktop/serialca/src/Serial.cpp",
+  "file": "/home/zyi/Desktop/serialca/src/Serial.cpp"
 },
 {
-  "directory": "/home/zyi/Desktop/cpp/serialca/build",
-  "command": "/usr/bin/c++  -I/home/zyi/Desktop/cpp/serialca/include -Wall -Wextra -Wpedantic -std=c++14 -o CMakeFiles/helios_serial.dir/src/CRC.cpp.o -c /home/zyi/Desktop/cpp/serialca/src/CRC.cpp",
-  "file": "/home/zyi/Desktop/cpp/serialca/src/CRC.cpp"
+  "directory": "/home/zyi/Desktop/serialca/build",
+  "command": "/usr/bin/c++  -I/home/zyi/Desktop/serialca/include -Wall -Wextra -Wpedantic -std=c++14 -o CMakeFiles/helios_serial.dir/src/CRC.cpp.o -c /home/zyi/Desktop/serialca/src/CRC.cpp",
+  "file": "/home/zyi/Desktop/serialca/src/CRC.cpp"
 },
 {
-  "directory": "/home/zyi/Desktop/cpp/serialca/build",
-  "command": "/usr/bin/c++  -I/home/zyi/Desktop/cpp/serialca/include -Wall -Wextra -Wpedantic -std=c++14 -o CMakeFiles/serial_example.dir/main.cpp.o -c /home/zyi/Desktop/cpp/serialca/main.cpp",
-  "file": "/home/zyi/Desktop/cpp/serialca/main.cpp"
+  "directory": "/home/zyi/Desktop/serialca/build",
+  "command": "/usr/bin/c++  -I/home/zyi/Desktop/serialca/include -I/home/zyi/Desktop/serialca/mindvision/src -I/home/zyi/Desktop/serialca/mindvision/3rdparty/MVSDK/include -isystem /usr/include/opencv4 -Wall -Wextra -Wpedantic -std=c++14 -o CMakeFiles/serial_example.dir/main.cpp.o -c /home/zyi/Desktop/serialca/main.cpp",
+  "file": "/home/zyi/Desktop/serialca/main.cpp"
+},
+{
+  "directory": "/home/zyi/Desktop/serialca/build/mindvision",
+  "command": "/usr/bin/c++  -I/home/zyi/Desktop/serialca/mindvision/src -I/home/zyi/Desktop/serialca/mindvision/3rdparty/MVSDK/include -isystem /usr/include/opencv4 -std=c++14 -o CMakeFiles/mindvision_input.dir/src/MVCameraInput.cpp.o -c /home/zyi/Desktop/serialca/mindvision/src/MVCameraInput.cpp",
+  "file": "/home/zyi/Desktop/serialca/mindvision/src/MVCameraInput.cpp"
+},
+{
+  "directory": "/home/zyi/Desktop/serialca/build/mindvision",
+  "command": "/usr/bin/c++  -I/home/zyi/Desktop/serialca/mindvision/src -I/home/zyi/Desktop/serialca/mindvision/3rdparty/MVSDK/include -isystem /usr/include/opencv4 -std=c++14 -o CMakeFiles/mindvision_input.dir/src/VideoInput.cpp.o -c /home/zyi/Desktop/serialca/mindvision/src/VideoInput.cpp",
+  "file": "/home/zyi/Desktop/serialca/mindvision/src/VideoInput.cpp"
 }
 ]

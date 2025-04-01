@@ -8,8 +8,8 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/zyi/Desktop/cpp/serialca/src/CRC.cpp" "CMakeFiles/helios_serial.dir/src/CRC.cpp.o" "gcc" "CMakeFiles/helios_serial.dir/src/CRC.cpp.o.d"
-  "/home/zyi/Desktop/cpp/serialca/src/Serial.cpp" "CMakeFiles/helios_serial.dir/src/Serial.cpp.o" "gcc" "CMakeFiles/helios_serial.dir/src/Serial.cpp.o.d"
+  "/home/zyi/Desktop/serialca/src/CRC.cpp" "CMakeFiles/helios_serial.dir/src/CRC.cpp.o" "gcc" "CMakeFiles/helios_serial.dir/src/CRC.cpp.o.d"
+  "/home/zyi/Desktop/serialca/src/Serial.cpp" "CMakeFiles/helios_serial.dir/src/Serial.cpp.o" "gcc" "CMakeFiles/helios_serial.dir/src/Serial.cpp.o.d"
   )
 
 # Targets to which this target links.

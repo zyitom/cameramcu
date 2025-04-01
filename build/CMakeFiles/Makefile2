@@ -54,10 +54,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/zyi/Desktop/cpp/serialca
+CMAKE_SOURCE_DIR = /home/zyi/Desktop/serialca
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/zyi/Desktop/cpp/serialca/build
+CMAKE_BINARY_DIR = /home/zyi/Desktop/serialca/build
 
 #=============================================================================
 # Directory level rules for the build root directory
@@ -65,16 +65,33 @@ CMAKE_BINARY_DIR = /home/zyi/Desktop/cpp/serialca/build
 # The main recursive "all" target.
 all: CMakeFiles/helios_serial.dir/all
 all: CMakeFiles/serial_example.dir/all
+all: mindvision/all
 .PHONY : all
 
 # The main recursive "preinstall" target.
-preinstall:
+preinstall: mindvision/preinstall
 .PHONY : preinstall
 
 # The main recursive "clean" target.
 clean: CMakeFiles/helios_serial.dir/clean
 clean: CMakeFiles/serial_example.dir/clean
+clean: mindvision/clean
 .PHONY : clean
+
+#=============================================================================
+# Directory level rules for directory mindvision
+
+# Recursive "all" directory target.
+mindvision/all: mindvision/CMakeFiles/mindvision_input.dir/all
+.PHONY : mindvision/all
+
+# Recursive "preinstall" directory target.
+mindvision/preinstall:
+.PHONY : mindvision/preinstall
+
+# Recursive "clean" directory target.
+mindvision/clean: mindvision/CMakeFiles/mindvision_input.dir/clean
+.PHONY : mindvision/clean
 
 #=============================================================================
 # Target rules for target CMakeFiles/helios_serial.dir
@@ -83,14 +100,14 @@ clean: CMakeFiles/serial_example.dir/clean
 CMakeFiles/helios_serial.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/helios_serial.dir/build.make CMakeFiles/helios_serial.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/helios_serial.dir/build.make CMakeFiles/helios_serial.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/zyi/Desktop/cpp/serialca/build/CMakeFiles --progress-num=1,2,3 "Built target helios_serial"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=1,2,3 "Built target helios_serial"
 .PHONY : CMakeFiles/helios_serial.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/helios_serial.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/cpp/serialca/build/CMakeFiles 3
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 3
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/helios_serial.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/cpp/serialca/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 0
 .PHONY : CMakeFiles/helios_serial.dir/rule
 
 # Convenience name for target.
@@ -107,16 +124,17 @@ CMakeFiles/helios_serial.dir/clean:
 
 # All Build rule for target.
 CMakeFiles/serial_example.dir/all: CMakeFiles/helios_serial.dir/all
+CMakeFiles/serial_example.dir/all: mindvision/CMakeFiles/mindvision_input.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/serial_example.dir/build.make CMakeFiles/serial_example.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/serial_example.dir/build.make CMakeFiles/serial_example.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/zyi/Desktop/cpp/serialca/build/CMakeFiles --progress-num=4,5 "Built target serial_example"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=7,8 "Built target serial_example"
 .PHONY : CMakeFiles/serial_example.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/serial_example.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/cpp/serialca/build/CMakeFiles 5
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 8
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/serial_example.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/cpp/serialca/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 0
 .PHONY : CMakeFiles/serial_example.dir/rule
 
 # Convenience name for target.
@@ -127,6 +145,32 @@ serial_example: CMakeFiles/serial_example.dir/rule
 CMakeFiles/serial_example.dir/clean:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/serial_example.dir/build.make CMakeFiles/serial_example.dir/clean
 .PHONY : CMakeFiles/serial_example.dir/clean
+
+#=============================================================================
+# Target rules for target mindvision/CMakeFiles/mindvision_input.dir
+
+# All Build rule for target.
+mindvision/CMakeFiles/mindvision_input.dir/all:
+	$(MAKE) $(MAKESILENT) -f mindvision/CMakeFiles/mindvision_input.dir/build.make mindvision/CMakeFiles/mindvision_input.dir/depend
+	$(MAKE) $(MAKESILENT) -f mindvision/CMakeFiles/mindvision_input.dir/build.make mindvision/CMakeFiles/mindvision_input.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=4,5,6 "Built target mindvision_input"
+.PHONY : mindvision/CMakeFiles/mindvision_input.dir/all
+
+# Build rule for subdir invocation for target.
+mindvision/CMakeFiles/mindvision_input.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 3
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 mindvision/CMakeFiles/mindvision_input.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 0
+.PHONY : mindvision/CMakeFiles/mindvision_input.dir/rule
+
+# Convenience name for target.
+mindvision_input: mindvision/CMakeFiles/mindvision_input.dir/rule
+.PHONY : mindvision_input
+
+# clean rule for target.
+mindvision/CMakeFiles/mindvision_input.dir/clean:
+	$(MAKE) $(MAKESILENT) -f mindvision/CMakeFiles/mindvision_input.dir/build.make mindvision/CMakeFiles/mindvision_input.dir/clean
+.PHONY : mindvision/CMakeFiles/mindvision_input.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

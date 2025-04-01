@@ -1,6 +1,6 @@
 CMakeFiles/helios_serial.dir/src/CRC.cpp.o: \
- /home/zyi/Desktop/cpp/serialca/src/CRC.cpp /usr/include/stdc-predef.h \
- /home/zyi/Desktop/cpp/serialca/include/CRC.h /usr/include/c++/11/cstdint \
+ /home/zyi/Desktop/serialca/src/CRC.cpp /usr/include/stdc-predef.h \
+ /home/zyi/Desktop/serialca/include/CRC.h /usr/include/c++/11/cstdint \
  /usr/include/x86_64-linux-gnu/c++/11/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/11/bits/os_defines.h \
  /usr/include/features.h /usr/include/features-time64.h \

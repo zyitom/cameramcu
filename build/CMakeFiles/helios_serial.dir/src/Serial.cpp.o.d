@@ -1,6 +1,6 @@
 CMakeFiles/helios_serial.dir/src/Serial.cpp.o: \
- /home/zyi/Desktop/cpp/serialca/src/Serial.cpp /usr/include/stdc-predef.h \
- /home/zyi/Desktop/cpp/serialca/include/Serial.hpp \
+ /home/zyi/Desktop/serialca/src/Serial.cpp /usr/include/stdc-predef.h \
+ /home/zyi/Desktop/serialca/include/Serial.hpp \
  /usr/include/c++/11/cstdint \
  /usr/include/x86_64-linux-gnu/c++/11/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/11/bits/os_defines.h \
@@ -196,9 +196,9 @@ CMakeFiles/helios_serial.dir/src/Serial.cpp.o: \
  /usr/include/x86_64-linux-gnu/asm/ioctl.h \
  /usr/include/asm-generic/ioctl.h \
  /usr/include/x86_64-linux-gnu/bits/ioctl-types.h \
- /home/zyi/Desktop/cpp/serialca/include/CRC.h \
- /usr/include/c++/11/iostream /usr/include/c++/11/ostream \
- /usr/include/c++/11/ios /usr/include/c++/11/bits/ios_base.h \
+ /home/zyi/Desktop/serialca/include/CRC.h /usr/include/c++/11/iostream \
+ /usr/include/c++/11/ostream /usr/include/c++/11/ios \
+ /usr/include/c++/11/bits/ios_base.h \
  /usr/include/c++/11/bits/locale_classes.h \
  /usr/include/c++/11/bits/locale_classes.tcc \
  /usr/include/c++/11/streambuf /usr/include/c++/11/bits/streambuf.tcc \
