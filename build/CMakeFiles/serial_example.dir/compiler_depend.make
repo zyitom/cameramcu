@@ -298,8 +298,7 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
   /usr/include/c++/11/bits/quoted_string.h \
   /usr/include/c++/11/sstream \
   /usr/include/c++/11/bits/sstream.tcc \
-  ../mindvision/src/MVCameraInput.h \
-  ../mindvision/src/ImageInput.h \
+  ../hikvision/include/hikvision_camera.h \
   /usr/include/opencv4/opencv2/opencv.hpp \
   /usr/include/opencv4/opencv2/opencv_modules.hpp \
   /usr/include/opencv4/opencv2/core.hpp \
@@ -440,97 +439,26 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
   /usr/include/opencv4/opencv2/video.hpp \
   /usr/include/opencv4/opencv2/video/tracking.hpp \
   /usr/include/opencv4/opencv2/video/background_segm.hpp \
-  ../mindvision/3rdparty/MVSDK/include/CameraApi.h \
-  ../mindvision/3rdparty/MVSDK/include/CameraDefine.h \
-  ../mindvision/3rdparty/MVSDK/include/CameraStatus.h \
-  /usr/include/yaml-cpp/yaml.h \
-  /usr/include/yaml-cpp/parser.h \
-  /usr/include/yaml-cpp/dll.h \
-  /usr/include/yaml-cpp/emitter.h \
-  /usr/include/yaml-cpp/binary.h \
-  /usr/include/yaml-cpp/emitterdef.h \
-  /usr/include/yaml-cpp/emittermanip.h \
-  /usr/include/yaml-cpp/null.h \
-  /usr/include/yaml-cpp/ostream_wrapper.h \
-  /usr/include/yaml-cpp/emitterstyle.h \
-  /usr/include/yaml-cpp/stlemitter.h \
-  /usr/include/yaml-cpp/exceptions.h \
-  /usr/include/yaml-cpp/mark.h \
-  /usr/include/yaml-cpp/noexcept.h \
-  /usr/include/yaml-cpp/traits.h \
-  /usr/include/yaml-cpp/node/node.h \
-  /usr/include/yaml-cpp/node/detail/iterator_fwd.h \
-  /usr/include/yaml-cpp/node/ptr.h \
-  /usr/include/yaml-cpp/node/type.h \
-  /usr/include/yaml-cpp/node/impl.h \
-  /usr/include/yaml-cpp/node/detail/memory.h \
-  /usr/include/yaml-cpp/node/detail/node.h \
-  /usr/include/yaml-cpp/node/detail/node_ref.h \
-  /usr/include/yaml-cpp/node/detail/node_data.h \
-  /usr/include/yaml-cpp/node/detail/node_iterator.h \
-  /usr/include/c++/11/iterator \
-  /usr/include/c++/11/bits/stream_iterator.h \
-  /usr/include/yaml-cpp/node/iterator.h \
-  /usr/include/yaml-cpp/node/detail/iterator.h \
-  /usr/include/yaml-cpp/node/convert.h \
-  /usr/include/yaml-cpp/node/detail/impl.h \
-  /usr/include/yaml-cpp/node/parse.h \
-  /usr/include/yaml-cpp/node/emit.h
+  ../hikvision/include/MvErrorDefine.h \
+  ../hikvision/include/MvISPErrorDefine.h \
+  ../hikvision/include/CameraParams.h \
+  ../hikvision/include/PixelType.h \
+  ../hikvision/include/MvCameraControl.h \
+  ../hikvision/include/MvObsoleteInterfaces.h \
+  ../hikvision/include/ObsoleteCamParams.h
 
 
-/usr/include/yaml-cpp/node/emit.h:
+../hikvision/include/MvCameraControl.h:
 
-/usr/include/yaml-cpp/node/parse.h:
-
-/usr/include/yaml-cpp/node/convert.h:
-
-/usr/include/yaml-cpp/node/iterator.h:
-
-/usr/include/c++/11/bits/stream_iterator.h:
-
-/usr/include/yaml-cpp/node/detail/node_data.h:
-
-/usr/include/yaml-cpp/node/detail/memory.h:
-
-/usr/include/yaml-cpp/node/impl.h:
-
-/usr/include/yaml-cpp/node/detail/node.h:
-
-/usr/include/yaml-cpp/node/detail/iterator_fwd.h:
-
-/usr/include/yaml-cpp/node/node.h:
-
-/usr/include/yaml-cpp/traits.h:
-
-/usr/include/yaml-cpp/mark.h:
-
-/usr/include/yaml-cpp/exceptions.h:
-
-/usr/include/yaml-cpp/emittermanip.h:
-
-/usr/include/yaml-cpp/emitterdef.h:
-
-/usr/include/yaml-cpp/binary.h:
-
-/usr/include/yaml-cpp/yaml.h:
-
-../mindvision/3rdparty/MVSDK/include/CameraStatus.h:
-
-../mindvision/3rdparty/MVSDK/include/CameraDefine.h:
-
-/usr/include/yaml-cpp/node/detail/impl.h:
+../hikvision/include/MvISPErrorDefine.h:
 
 /usr/include/opencv4/opencv2/video/background_segm.hpp:
 
 /usr/include/opencv4/opencv2/video.hpp:
 
-/usr/include/opencv4/opencv2/stitching/detail/seam_finders.hpp:
-
 /usr/include/c++/11/bits/list.tcc:
 
 /usr/include/c++/11/list:
-
-/usr/include/yaml-cpp/emitterstyle.h:
 
 /usr/include/opencv4/opencv2/stitching/detail/warpers_inl.hpp:
 
@@ -551,6 +479,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/opencv4/opencv2/flann/ground_truth.h:
 
 /usr/include/c++/11/math.h:
+
+../hikvision/include/ObsoleteCamParams.h:
 
 /usr/include/opencv4/opencv2/flann/lsh_table.h:
 
@@ -652,6 +582,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/local_lim.h:
 
+../hikvision/include/CameraParams.h:
+
 /usr/include/x86_64-linux-gnu/bits/posix1_lim.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/11/include/limits.h:
@@ -680,7 +612,9 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/opencv4/opencv2/opencv.hpp:
 
-../mindvision/src/ImageInput.h:
+/usr/include/opencv4/opencv2/stitching/detail/seam_finders.hpp:
+
+../hikvision/include/hikvision_camera.h:
 
 /usr/include/c++/11/sstream:
 
@@ -818,8 +752,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_tm.h:
 
-/usr/include/yaml-cpp/node/detail/iterator.h:
-
 /usr/include/c++/11/bits/stringfwd.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/FILE.h:
@@ -837,8 +769,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/c++/11/bits/std_mutex.h:
 
 /usr/include/wchar.h:
-
-/usr/include/yaml-cpp/parser.h:
 
 /usr/include/c++/11/bits/cxxabi_init_exception.h:
 
@@ -886,8 +816,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/select.h:
 
-/usr/include/yaml-cpp/null.h:
-
 /usr/include/c++/11/bits/deque.tcc:
 
 /usr/include/c++/11/bits/stl_set.h:
@@ -899,8 +827,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/c++/11/bits/stl_algobase.h:
 
 /usr/include/unistd.h:
-
-/usr/include/yaml-cpp/ostream_wrapper.h:
 
 /usr/include/x86_64-linux-gnu/gnu/stubs-64.h:
 
@@ -941,6 +867,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/c++/11/bits/refwrap.h:
 
 /usr/include/x86_64-linux-gnu/c++/11/bits/gthr.h:
+
+../hikvision/include/MvErrorDefine.h:
 
 /usr/include/c++/11/ext/type_traits.h:
 
@@ -994,8 +922,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/linux/close_range.h:
 
-/usr/include/yaml-cpp/node/detail/node_iterator.h:
-
 /usr/include/x86_64-linux-gnu/bits/timesize.h:
 
 /usr/include/c++/11/complex:
@@ -1038,8 +964,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/ext/numeric_traits.h:
 
-/usr/include/yaml-cpp/node/type.h:
-
 /usr/include/opencv4/opencv2/videoio.hpp:
 
 /usr/include/c++/11/bits/atomic_base.h:
@@ -1076,8 +1000,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/new:
 
-/usr/include/yaml-cpp/node/ptr.h:
-
 /usr/include/opencv4/opencv2/stitching/detail/warpers.hpp:
 
 /usr/include/x86_64-linux-gnu/bits/struct_mutex.h:
@@ -1104,6 +1026,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/cstdlib:
 
+../hikvision/include/PixelType.h:
+
 /usr/include/c++/11/bit:
 
 /usr/include/x86_64-linux-gnu/bits/types/sigset_t.h:
@@ -1124,8 +1048,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/bits/exception.h:
 
-/usr/include/c++/11/iterator:
-
 /usr/include/x86_64-linux-gnu/bits/floatn.h:
 
 /usr/include/c++/11/bits/range_access.h:
@@ -1140,8 +1062,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/typeinfo:
 
-/usr/include/yaml-cpp/dll.h:
-
 /usr/include/c++/11/bits/exception_ptr.h:
 
 /usr/include/stdlib.h:
@@ -1151,8 +1071,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/x86_64-linux-gnu/bits/waitflags.h:
 
 /usr/include/x86_64-linux-gnu/bits/byteswap.h:
-
-../mindvision/3rdparty/MVSDK/include/CameraApi.h:
 
 /usr/include/c++/11/bits/stl_construct.h:
 
@@ -1165,8 +1083,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/x86_64-linux-gnu/bits/stdlib-float.h:
 
 /usr/include/alloca.h:
-
-/usr/include/yaml-cpp/emitter.h:
 
 /usr/include/c++/11/cstdio:
 
@@ -1244,13 +1160,13 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/bits/nested_exception.h:
 
+../hikvision/include/MvObsoleteInterfaces.h:
+
 /usr/include/c++/11/queue:
 
 /usr/include/c++/11/bits/shared_ptr_atomic.h:
 
 /usr/include/c++/11/bits/parse_numbers.h:
-
-/usr/include/yaml-cpp/noexcept.h:
 
 /usr/include/c++/11/bits/atomic_lockfree_defines.h:
 
@@ -1277,8 +1193,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/endian.h:
 
 /usr/include/c++/11/bits/erase_if.h:
-
-/usr/include/yaml-cpp/stlemitter.h:
 
 /usr/include/c++/11/bits/cpp_type_traits.h:
 
@@ -1315,8 +1229,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/c++/11/ext/aligned_buffer.h:
 
 /usr/include/c++/11/future:
-
-/usr/include/yaml-cpp/node/detail/node_ref.h:
 
 /usr/include/c++/11/ext/string_conversions.h:
 
@@ -1387,8 +1299,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/x86_64-linux-gnu/bits/ioctls.h:
 
 /usr/include/asm-generic/ioctls.h:
-
-../mindvision/src/MVCameraInput.h:
 
 /usr/include/c++/11/bits/std_function.h:
 

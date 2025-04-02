@@ -143,17 +143,17 @@ serial_example/fast:
 .PHONY : serial_example/fast
 
 #=============================================================================
-# Target rules for targets named mindvision_input
+# Target rules for targets named hikvision_camera
 
 # Build rule for target.
-mindvision_input: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 mindvision_input
-.PHONY : mindvision_input
+hikvision_camera: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 hikvision_camera
+.PHONY : hikvision_camera
 
 # fast build rule for target.
-mindvision_input/fast:
-	$(MAKE) $(MAKESILENT) -f mindvision/CMakeFiles/mindvision_input.dir/build.make mindvision/CMakeFiles/mindvision_input.dir/build
-.PHONY : mindvision_input/fast
+hikvision_camera/fast:
+	$(MAKE) $(MAKESILENT) -f hikvision/CMakeFiles/hikvision_camera.dir/build.make hikvision/CMakeFiles/hikvision_camera.dir/build
+.PHONY : hikvision_camera/fast
 
 main.o: main.cpp.o
 .PHONY : main.o
@@ -236,7 +236,7 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... helios_serial"
-	@echo "... mindvision_input"
+	@echo "... hikvision_camera"
 	@echo "... serial_example"
 	@echo "... main.o"
 	@echo "... main.i"

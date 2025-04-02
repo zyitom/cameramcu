@@ -14,7 +14,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
 # Targets to which this target links.
 set(CMAKE_TARGET_LINKED_INFO_FILES
   "/home/zyi/Desktop/serialca/build/CMakeFiles/helios_serial.dir/DependInfo.cmake"
-  "/home/zyi/Desktop/serialca/build/mindvision/CMakeFiles/mindvision_input.dir/DependInfo.cmake"
+  "/home/zyi/Desktop/serialca/build/hikvision/CMakeFiles/hikvision_camera.dir/DependInfo.cmake"
   )
 
 # Fortran module output directory.

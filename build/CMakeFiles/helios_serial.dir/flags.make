@@ -6,5 +6,5 @@ CXX_DEFINES =
 
 CXX_INCLUDES = -I/home/zyi/Desktop/serialca/include
 
-CXX_FLAGS = -Wall -Wextra -Wpedantic -std=c++14
+CXX_FLAGS = -g -Wall -Wextra -Wpedantic -std=c++14
 

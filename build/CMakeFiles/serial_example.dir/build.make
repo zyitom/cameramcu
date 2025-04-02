@@ -93,7 +93,7 @@ serial_example_EXTERNAL_OBJECTS =
 serial_example: CMakeFiles/serial_example.dir/main.cpp.o
 serial_example: CMakeFiles/serial_example.dir/build.make
 serial_example: libhelios_serial.a
-serial_example: mindvision/libmindvision_input.a
+serial_example: hikvision/libhikvision_camera.a
 serial_example: /usr/lib/x86_64-linux-gnu/libopencv_stitching.so.4.5.4d
 serial_example: /usr/lib/x86_64-linux-gnu/libopencv_alphamat.so.4.5.4d
 serial_example: /usr/lib/x86_64-linux-gnu/libopencv_aruco.so.4.5.4d
@@ -149,7 +149,6 @@ serial_example: /usr/lib/x86_64-linux-gnu/libopencv_photo.so.4.5.4d
 serial_example: /usr/lib/x86_64-linux-gnu/libopencv_imgproc.so.4.5.4d
 serial_example: /usr/lib/x86_64-linux-gnu/libopencv_core.so.4.5.4d
 serial_example: /usr/lib/x86_64-linux-gnu/libyaml-cpp.so.0.7.0
-serial_example: /usr/lib/libMVSDK.so
 serial_example: CMakeFiles/serial_example.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable serial_example"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/serial_example.dir/link.txt --verbose=$(VERBOSE)

@@ -9,13 +9,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 set(INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
-add_subdirectory(mindvision)
 # Add compile options
 if(MSVC)
     add_compile_options(/W4)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
+add_subdirectory(hikvision)
 
 
 
@@ -49,7 +49,7 @@ target_link_libraries(serial_example PRIVATE helios_serial)
 
   
 find_package(Threads REQUIRED)
-target_link_libraries(serial_example PRIVATE mindvision_input Threads::Threads)
+target_link_libraries(serial_example PRIVATE hikvision_camera Threads::Threads)
 
 include(GNUInstallDirs)
 

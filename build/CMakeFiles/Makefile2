@@ -65,33 +65,33 @@ CMAKE_BINARY_DIR = /home/zyi/Desktop/serialca/build
 # The main recursive "all" target.
 all: CMakeFiles/helios_serial.dir/all
 all: CMakeFiles/serial_example.dir/all
-all: mindvision/all
+all: hikvision/all
 .PHONY : all
 
 # The main recursive "preinstall" target.
-preinstall: mindvision/preinstall
+preinstall: hikvision/preinstall
 .PHONY : preinstall
 
 # The main recursive "clean" target.
 clean: CMakeFiles/helios_serial.dir/clean
 clean: CMakeFiles/serial_example.dir/clean
-clean: mindvision/clean
+clean: hikvision/clean
 .PHONY : clean
 
 #=============================================================================
-# Directory level rules for directory mindvision
+# Directory level rules for directory hikvision
 
 # Recursive "all" directory target.
-mindvision/all: mindvision/CMakeFiles/mindvision_input.dir/all
-.PHONY : mindvision/all
+hikvision/all: hikvision/CMakeFiles/hikvision_camera.dir/all
+.PHONY : hikvision/all
 
 # Recursive "preinstall" directory target.
-mindvision/preinstall:
-.PHONY : mindvision/preinstall
+hikvision/preinstall:
+.PHONY : hikvision/preinstall
 
 # Recursive "clean" directory target.
-mindvision/clean: mindvision/CMakeFiles/mindvision_input.dir/clean
-.PHONY : mindvision/clean
+hikvision/clean: hikvision/CMakeFiles/hikvision_camera.dir/clean
+.PHONY : hikvision/clean
 
 #=============================================================================
 # Target rules for target CMakeFiles/helios_serial.dir
@@ -124,15 +124,15 @@ CMakeFiles/helios_serial.dir/clean:
 
 # All Build rule for target.
 CMakeFiles/serial_example.dir/all: CMakeFiles/helios_serial.dir/all
-CMakeFiles/serial_example.dir/all: mindvision/CMakeFiles/mindvision_input.dir/all
+CMakeFiles/serial_example.dir/all: hikvision/CMakeFiles/hikvision_camera.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/serial_example.dir/build.make CMakeFiles/serial_example.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/serial_example.dir/build.make CMakeFiles/serial_example.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=7,8 "Built target serial_example"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=6,7 "Built target serial_example"
 .PHONY : CMakeFiles/serial_example.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/serial_example.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 8
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 7
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/serial_example.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 0
 .PHONY : CMakeFiles/serial_example.dir/rule
@@ -147,30 +147,30 @@ CMakeFiles/serial_example.dir/clean:
 .PHONY : CMakeFiles/serial_example.dir/clean
 
 #=============================================================================
-# Target rules for target mindvision/CMakeFiles/mindvision_input.dir
+# Target rules for target hikvision/CMakeFiles/hikvision_camera.dir
 
 # All Build rule for target.
-mindvision/CMakeFiles/mindvision_input.dir/all:
-	$(MAKE) $(MAKESILENT) -f mindvision/CMakeFiles/mindvision_input.dir/build.make mindvision/CMakeFiles/mindvision_input.dir/depend
-	$(MAKE) $(MAKESILENT) -f mindvision/CMakeFiles/mindvision_input.dir/build.make mindvision/CMakeFiles/mindvision_input.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=4,5,6 "Built target mindvision_input"
-.PHONY : mindvision/CMakeFiles/mindvision_input.dir/all
+hikvision/CMakeFiles/hikvision_camera.dir/all:
+	$(MAKE) $(MAKESILENT) -f hikvision/CMakeFiles/hikvision_camera.dir/build.make hikvision/CMakeFiles/hikvision_camera.dir/depend
+	$(MAKE) $(MAKESILENT) -f hikvision/CMakeFiles/hikvision_camera.dir/build.make hikvision/CMakeFiles/hikvision_camera.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=4,5 "Built target hikvision_camera"
+.PHONY : hikvision/CMakeFiles/hikvision_camera.dir/all
 
 # Build rule for subdir invocation for target.
-mindvision/CMakeFiles/mindvision_input.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 3
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 mindvision/CMakeFiles/mindvision_input.dir/all
+hikvision/CMakeFiles/hikvision_camera.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 2
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 hikvision/CMakeFiles/hikvision_camera.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 0
-.PHONY : mindvision/CMakeFiles/mindvision_input.dir/rule
+.PHONY : hikvision/CMakeFiles/hikvision_camera.dir/rule
 
 # Convenience name for target.
-mindvision_input: mindvision/CMakeFiles/mindvision_input.dir/rule
-.PHONY : mindvision_input
+hikvision_camera: hikvision/CMakeFiles/hikvision_camera.dir/rule
+.PHONY : hikvision_camera
 
 # clean rule for target.
-mindvision/CMakeFiles/mindvision_input.dir/clean:
-	$(MAKE) $(MAKESILENT) -f mindvision/CMakeFiles/mindvision_input.dir/build.make mindvision/CMakeFiles/mindvision_input.dir/clean
-.PHONY : mindvision/CMakeFiles/mindvision_input.dir/clean
+hikvision/CMakeFiles/hikvision_camera.dir/clean:
+	$(MAKE) $(MAKESILENT) -f hikvision/CMakeFiles/hikvision_camera.dir/build.make hikvision/CMakeFiles/hikvision_camera.dir/clean
+.PHONY : hikvision/CMakeFiles/hikvision_camera.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.
