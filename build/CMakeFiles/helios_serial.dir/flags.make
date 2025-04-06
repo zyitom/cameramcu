@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/home/zyi/Desktop/serialca/include
+CXX_INCLUDES = -I/home/zyi/cameramcu/include
 
-CXX_FLAGS = -g -Wall -Wextra -Wpedantic -std=c++14
+CXX_FLAGS = -Wall -Wextra -Wpedantic -std=c++14
 

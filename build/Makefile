@@ -57,10 +57,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/zyi/Desktop/serialca
+CMAKE_SOURCE_DIR = /home/zyi/cameramcu
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/zyi/Desktop/serialca/build
+CMAKE_BINARY_DIR = /home/zyi/cameramcu/build
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -87,9 +87,9 @@ rebuild_cache/fast: rebuild_cache
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles /home/zyi/Desktop/serialca/build//CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/cameramcu/build/CMakeFiles /home/zyi/cameramcu/build//CMakeFiles/progress.marks
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/Desktop/serialca/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zyi/cameramcu/build/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
@@ -154,6 +154,19 @@ hikvision_camera: cmake_check_build_system
 hikvision_camera/fast:
 	$(MAKE) $(MAKESILENT) -f hikvision/CMakeFiles/hikvision_camera.dir/build.make hikvision/CMakeFiles/hikvision_camera.dir/build
 .PHONY : hikvision_camera/fast
+
+#=============================================================================
+# Target rules for targets named serial
+
+# Build rule for target.
+serial: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 serial
+.PHONY : serial
+
+# fast build rule for target.
+serial/fast:
+	$(MAKE) $(MAKESILENT) -f serial/CMakeFiles/serial.dir/build.make serial/CMakeFiles/serial.dir/build
+.PHONY : serial/fast
 
 main.o: main.cpp.o
 .PHONY : main.o
@@ -237,6 +250,7 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... helios_serial"
 	@echo "... hikvision_camera"
+	@echo "... serial"
 	@echo "... serial_example"
 	@echo "... main.o"
 	@echo "... main.i"

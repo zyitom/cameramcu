@@ -253,20 +253,9 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
   /usr/include/asm-generic/ioctl.h \
   /usr/include/x86_64-linux-gnu/bits/ioctl-types.h \
   ../include/CRC.h \
-  ../include/Protocol.hpp \
-  /usr/include/c++/11/cmath \
-  /usr/include/math.h \
-  /usr/include/x86_64-linux-gnu/bits/math-vector.h \
-  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
-  /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h \
-  /usr/include/x86_64-linux-gnu/bits/fp-logb.h \
-  /usr/include/x86_64-linux-gnu/bits/fp-fast.h \
-  /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
-  /usr/include/x86_64-linux-gnu/bits/mathcalls.h \
-  /usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h \
-  /usr/include/x86_64-linux-gnu/bits/iscanonical.h \
-  /usr/include/c++/11/iostream \
-  /usr/include/c++/11/ostream \
+  ../serial/include/serial/serial.h \
+  /usr/include/c++/11/sstream \
+  /usr/include/c++/11/istream \
   /usr/include/c++/11/ios \
   /usr/include/c++/11/bits/ios_base.h \
   /usr/include/c++/11/bits/locale_classes.h \
@@ -283,9 +272,24 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
   /usr/include/x86_64-linux-gnu/c++/11/bits/ctype_inline.h \
   /usr/include/c++/11/bits/locale_facets.tcc \
   /usr/include/c++/11/bits/basic_ios.tcc \
+  /usr/include/c++/11/ostream \
   /usr/include/c++/11/bits/ostream.tcc \
-  /usr/include/c++/11/istream \
   /usr/include/c++/11/bits/istream.tcc \
+  /usr/include/c++/11/bits/sstream.tcc \
+  ../serial/include/serial/v8stdint.h \
+  ../include/Protocol.hpp \
+  /usr/include/c++/11/cmath \
+  /usr/include/math.h \
+  /usr/include/x86_64-linux-gnu/bits/math-vector.h \
+  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
+  /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h \
+  /usr/include/x86_64-linux-gnu/bits/fp-logb.h \
+  /usr/include/x86_64-linux-gnu/bits/fp-fast.h \
+  /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
+  /usr/include/x86_64-linux-gnu/bits/mathcalls.h \
+  /usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h \
+  /usr/include/x86_64-linux-gnu/bits/iscanonical.h \
+  /usr/include/c++/11/iostream \
   /usr/include/c++/11/iomanip \
   /usr/include/c++/11/locale \
   /usr/include/c++/11/bits/locale_facets_nonio.h \
@@ -296,8 +300,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
   /usr/include/c++/11/bits/locale_facets_nonio.tcc \
   /usr/include/c++/11/bits/locale_conv.h \
   /usr/include/c++/11/bits/quoted_string.h \
-  /usr/include/c++/11/sstream \
-  /usr/include/c++/11/bits/sstream.tcc \
   ../hikvision/include/hikvision_camera.h \
   /usr/include/opencv4/opencv2/opencv.hpp \
   /usr/include/opencv4/opencv2/opencv_modules.hpp \
@@ -470,8 +472,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/opencv4/opencv2/ml/ml.inl.hpp:
 
-/usr/include/opencv4/opencv2/imgproc/segmentation.hpp:
-
 /usr/include/opencv4/opencv2/imgcodecs.hpp:
 
 /usr/include/opencv4/opencv2/highgui.hpp:
@@ -616,8 +616,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 ../hikvision/include/hikvision_camera.h:
 
-/usr/include/c++/11/sstream:
-
 /usr/include/c++/11/bits/quoted_string.h:
 
 /usr/include/c++/11/bits/locale_conv.h:
@@ -638,11 +636,33 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/bits/locale_facets_nonio.h:
 
+/usr/include/c++/11/bits/stl_list.h:
+
+/usr/include/opencv4/opencv2/flann/saving.h:
+
+/usr/include/x86_64-linux-gnu/bits/iscanonical.h:
+
+/usr/include/x86_64-linux-gnu/bits/mathcalls.h:
+
+/usr/include/opencv4/opencv2/core/utility.hpp:
+
+/usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h:
+
+/usr/include/c++/11/iostream:
+
+/usr/include/x86_64-linux-gnu/bits/fp-fast.h:
+
+/usr/include/x86_64-linux-gnu/bits/fp-logb.h:
+
+/usr/include/x86_64-linux-gnu/bits/flt-eval-method.h:
+
+/usr/include/x86_64-linux-gnu/bits/math-vector.h:
+
 /usr/include/c++/11/bits/istream.tcc:
 
-/usr/include/c++/11/istream:
-
 /usr/include/c++/11/bits/ostream.tcc:
+
+/usr/include/c++/11/ostream:
 
 /usr/include/x86_64-linux-gnu/c++/11/bits/ctype_inline.h:
 
@@ -663,28 +683,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/c++/11/bits/locale_classes.tcc:
 
 /usr/include/c++/11/bits/locale_classes.h:
-
-/usr/include/c++/11/ostream:
-
-/usr/include/c++/11/bits/stl_list.h:
-
-/usr/include/opencv4/opencv2/flann/saving.h:
-
-/usr/include/x86_64-linux-gnu/bits/iscanonical.h:
-
-/usr/include/x86_64-linux-gnu/bits/mathcalls.h:
-
-/usr/include/opencv4/opencv2/core/utility.hpp:
-
-/usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h:
-
-/usr/include/c++/11/iostream:
-
-/usr/include/x86_64-linux-gnu/bits/fp-fast.h:
-
-/usr/include/x86_64-linux-gnu/bits/fp-logb.h:
-
-/usr/include/x86_64-linux-gnu/bits/flt-eval-method.h:
 
 /usr/include/asm-generic/ioctl.h:
 
@@ -737,6 +735,10 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h:
 
 /usr/include/c++/11/bits/localefwd.h:
+
+/usr/include/opencv4/opencv2/imgproc/segmentation.hpp:
+
+../serial/include/serial/serial.h:
 
 /usr/include/x86_64-linux-gnu/c++/11/bits/c++allocator.h:
 
@@ -889,6 +891,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/c++/11/bits/hash_bytes.h:
 
 /usr/include/c++/11/bits/move.h:
+
+../serial/include/serial/v8stdint.h:
 
 /usr/include/c++/11/bits/unordered_map.h:
 
@@ -1112,6 +1116,10 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/bits/stl_uninitialized.h:
 
+../include/Protocol.hpp:
+
+/usr/include/c++/11/backward/auto_ptr.h:
+
 /usr/include/opencv4/opencv2/core/types.hpp:
 
 /usr/include/x86_64-linux-gnu/gnu/stubs.h:
@@ -1208,6 +1216,12 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/c++/11/ratio:
 
+/usr/include/math.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/__FILE.h:
+
+/usr/include/c++/11/cstring:
+
 /usr/include/c++/11/limits:
 
 /usr/include/c++/11/ios:
@@ -1254,8 +1268,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/termios-c_cflag.h:
 
-/usr/include/x86_64-linux-gnu/bits/math-vector.h:
-
 /usr/include/opencv4/opencv2/core/vsx_utils.hpp:
 
 /usr/include/x86_64-linux-gnu/bits/termios-c_lflag.h:
@@ -1263,6 +1275,14 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 /usr/include/opencv4/opencv2/flann/flann_base.hpp:
 
 /usr/include/x86_64-linux-gnu/bits/termios-misc.h:
+
+/usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/11/include/stddef.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h:
+
+/usr/include/x86_64-linux-gnu/sys/ttydefaults.h:
 
 /usr/include/fcntl.h:
 
@@ -1294,10 +1314,6 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/sys/ioctl.h:
 
-/usr/include/c++/11/bits/ios_base.h:
-
-/usr/include/x86_64-linux-gnu/bits/ioctls.h:
-
 /usr/include/asm-generic/ioctls.h:
 
 /usr/include/c++/11/bits/std_function.h:
@@ -1308,20 +1324,10 @@ CMakeFiles/serial_example.dir/main.cpp.o: ../main.cpp \
 
 /usr/include/x86_64-linux-gnu/bits/ioctl-types.h:
 
-/usr/include/c++/11/backward/auto_ptr.h:
+/usr/include/c++/11/sstream:
 
-../include/Protocol.hpp:
+/usr/include/c++/11/istream:
 
-/usr/include/x86_64-linux-gnu/bits/types/__FILE.h:
+/usr/include/x86_64-linux-gnu/bits/ioctls.h:
 
-/usr/include/c++/11/cstring:
-
-/usr/include/math.h:
-
-/usr/lib/gcc/x86_64-linux-gnu/11/include/stddef.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h:
-
-/usr/include/x86_64-linux-gnu/sys/ttydefaults.h:
-
-/usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h:
+/usr/include/c++/11/bits/ios_base.h:

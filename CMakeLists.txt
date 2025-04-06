@@ -16,7 +16,7 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 add_subdirectory(hikvision)
-
+add_subdirectory(serial)
 
 
 message(STATUS "Configuring for Unix/Linux platform")
@@ -49,7 +49,7 @@ target_link_libraries(serial_example PRIVATE helios_serial)
 
   
 find_package(Threads REQUIRED)
-target_link_libraries(serial_example PRIVATE hikvision_camera Threads::Threads)
+target_link_libraries(serial_example PRIVATE hikvision_camera Threads::Threads serial)
 
 include(GNUInstallDirs)
 

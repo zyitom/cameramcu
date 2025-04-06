@@ -1,6 +1,5 @@
-CMakeFiles/serial_example.dir/main.cpp.o: \
- /home/zyi/Desktop/serialca/main.cpp /usr/include/stdc-predef.h \
- /home/zyi/Desktop/serialca/include/Serial.hpp \
+CMakeFiles/serial_example.dir/main.cpp.o: /home/zyi/cameramcu/main.cpp \
+ /usr/include/stdc-predef.h /home/zyi/cameramcu/include/Serial.hpp \
  /usr/include/c++/11/cstdint \
  /usr/include/x86_64-linux-gnu/c++/11/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/11/bits/os_defines.h \
@@ -196,19 +195,9 @@ CMakeFiles/serial_example.dir/main.cpp.o: \
  /usr/include/x86_64-linux-gnu/asm/ioctl.h \
  /usr/include/asm-generic/ioctl.h \
  /usr/include/x86_64-linux-gnu/bits/ioctl-types.h \
- /home/zyi/Desktop/serialca/include/CRC.h \
- /home/zyi/Desktop/serialca/include/Protocol.hpp \
- /usr/include/c++/11/cmath /usr/include/math.h \
- /usr/include/x86_64-linux-gnu/bits/math-vector.h \
- /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
- /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h \
- /usr/include/x86_64-linux-gnu/bits/fp-logb.h \
- /usr/include/x86_64-linux-gnu/bits/fp-fast.h \
- /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
- /usr/include/x86_64-linux-gnu/bits/mathcalls.h \
- /usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h \
- /usr/include/x86_64-linux-gnu/bits/iscanonical.h \
- /usr/include/c++/11/iostream /usr/include/c++/11/ostream \
+ /home/zyi/cameramcu/include/CRC.h \
+ /home/zyi/cameramcu/serial/include/serial/serial.h \
+ /usr/include/c++/11/sstream /usr/include/c++/11/istream \
  /usr/include/c++/11/ios /usr/include/c++/11/bits/ios_base.h \
  /usr/include/c++/11/bits/locale_classes.h \
  /usr/include/c++/11/bits/locale_classes.tcc \
@@ -220,9 +209,22 @@ CMakeFiles/serial_example.dir/main.cpp.o: \
  /usr/include/c++/11/bits/streambuf_iterator.h \
  /usr/include/x86_64-linux-gnu/c++/11/bits/ctype_inline.h \
  /usr/include/c++/11/bits/locale_facets.tcc \
- /usr/include/c++/11/bits/basic_ios.tcc \
- /usr/include/c++/11/bits/ostream.tcc /usr/include/c++/11/istream \
- /usr/include/c++/11/bits/istream.tcc /usr/include/c++/11/iomanip \
+ /usr/include/c++/11/bits/basic_ios.tcc /usr/include/c++/11/ostream \
+ /usr/include/c++/11/bits/ostream.tcc \
+ /usr/include/c++/11/bits/istream.tcc \
+ /usr/include/c++/11/bits/sstream.tcc \
+ /home/zyi/cameramcu/serial/include/serial/v8stdint.h \
+ /home/zyi/cameramcu/include/Protocol.hpp /usr/include/c++/11/cmath \
+ /usr/include/math.h /usr/include/x86_64-linux-gnu/bits/math-vector.h \
+ /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
+ /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h \
+ /usr/include/x86_64-linux-gnu/bits/fp-logb.h \
+ /usr/include/x86_64-linux-gnu/bits/fp-fast.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h \
+ /usr/include/x86_64-linux-gnu/bits/iscanonical.h \
+ /usr/include/c++/11/iostream /usr/include/c++/11/iomanip \
  /usr/include/c++/11/locale \
  /usr/include/c++/11/bits/locale_facets_nonio.h \
  /usr/include/x86_64-linux-gnu/c++/11/bits/time_members.h \
@@ -230,9 +232,8 @@ CMakeFiles/serial_example.dir/main.cpp.o: \
  /usr/include/libintl.h /usr/include/c++/11/bits/codecvt.h \
  /usr/include/c++/11/bits/locale_facets_nonio.tcc \
  /usr/include/c++/11/bits/locale_conv.h \
- /usr/include/c++/11/bits/quoted_string.h /usr/include/c++/11/sstream \
- /usr/include/c++/11/bits/sstream.tcc \
- /home/zyi/Desktop/serialca/hikvision/include/hikvision_camera.h \
+ /usr/include/c++/11/bits/quoted_string.h \
+ /home/zyi/cameramcu/hikvision/include/hikvision_camera.h \
  /usr/include/opencv4/opencv2/opencv.hpp \
  /usr/include/opencv4/opencv2/opencv_modules.hpp \
  /usr/include/opencv4/opencv2/core.hpp \
@@ -364,10 +365,10 @@ CMakeFiles/serial_example.dir/main.cpp.o: \
  /usr/include/opencv4/opencv2/video.hpp \
  /usr/include/opencv4/opencv2/video/tracking.hpp \
  /usr/include/opencv4/opencv2/video/background_segm.hpp \
- /home/zyi/Desktop/serialca/hikvision/include/MvErrorDefine.h \
- /home/zyi/Desktop/serialca/hikvision/include/MvISPErrorDefine.h \
- /home/zyi/Desktop/serialca/hikvision/include/CameraParams.h \
- /home/zyi/Desktop/serialca/hikvision/include/PixelType.h \
- /home/zyi/Desktop/serialca/hikvision/include/MvCameraControl.h \
- /home/zyi/Desktop/serialca/hikvision/include/MvObsoleteInterfaces.h \
- /home/zyi/Desktop/serialca/hikvision/include/ObsoleteCamParams.h
+ /home/zyi/cameramcu/hikvision/include/MvErrorDefine.h \
+ /home/zyi/cameramcu/hikvision/include/MvISPErrorDefine.h \
+ /home/zyi/cameramcu/hikvision/include/CameraParams.h \
+ /home/zyi/cameramcu/hikvision/include/PixelType.h \
+ /home/zyi/cameramcu/hikvision/include/MvCameraControl.h \
+ /home/zyi/cameramcu/hikvision/include/MvObsoleteInterfaces.h \
+ /home/zyi/cameramcu/hikvision/include/ObsoleteCamParams.h

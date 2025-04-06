@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/zyi/Desktop/serialca
+CMAKE_SOURCE_DIR = /home/zyi/cameramcu
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/zyi/Desktop/serialca/build
+CMAKE_BINARY_DIR = /home/zyi/cameramcu/build
 
 # Include any dependencies generated for this target.
 include CMakeFiles/helios_serial.dir/depend.make
@@ -72,30 +72,30 @@ include CMakeFiles/helios_serial.dir/flags.make
 CMakeFiles/helios_serial.dir/src/Serial.cpp.o: CMakeFiles/helios_serial.dir/flags.make
 CMakeFiles/helios_serial.dir/src/Serial.cpp.o: ../src/Serial.cpp
 CMakeFiles/helios_serial.dir/src/Serial.cpp.o: CMakeFiles/helios_serial.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/helios_serial.dir/src/Serial.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/helios_serial.dir/src/Serial.cpp.o -MF CMakeFiles/helios_serial.dir/src/Serial.cpp.o.d -o CMakeFiles/helios_serial.dir/src/Serial.cpp.o -c /home/zyi/Desktop/serialca/src/Serial.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zyi/cameramcu/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/helios_serial.dir/src/Serial.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/helios_serial.dir/src/Serial.cpp.o -MF CMakeFiles/helios_serial.dir/src/Serial.cpp.o.d -o CMakeFiles/helios_serial.dir/src/Serial.cpp.o -c /home/zyi/cameramcu/src/Serial.cpp
 
 CMakeFiles/helios_serial.dir/src/Serial.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/helios_serial.dir/src/Serial.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zyi/Desktop/serialca/src/Serial.cpp > CMakeFiles/helios_serial.dir/src/Serial.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zyi/cameramcu/src/Serial.cpp > CMakeFiles/helios_serial.dir/src/Serial.cpp.i
 
 CMakeFiles/helios_serial.dir/src/Serial.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/helios_serial.dir/src/Serial.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zyi/Desktop/serialca/src/Serial.cpp -o CMakeFiles/helios_serial.dir/src/Serial.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zyi/cameramcu/src/Serial.cpp -o CMakeFiles/helios_serial.dir/src/Serial.cpp.s
 
 CMakeFiles/helios_serial.dir/src/CRC.cpp.o: CMakeFiles/helios_serial.dir/flags.make
 CMakeFiles/helios_serial.dir/src/CRC.cpp.o: ../src/CRC.cpp
 CMakeFiles/helios_serial.dir/src/CRC.cpp.o: CMakeFiles/helios_serial.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/helios_serial.dir/src/CRC.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/helios_serial.dir/src/CRC.cpp.o -MF CMakeFiles/helios_serial.dir/src/CRC.cpp.o.d -o CMakeFiles/helios_serial.dir/src/CRC.cpp.o -c /home/zyi/Desktop/serialca/src/CRC.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/zyi/cameramcu/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/helios_serial.dir/src/CRC.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/helios_serial.dir/src/CRC.cpp.o -MF CMakeFiles/helios_serial.dir/src/CRC.cpp.o.d -o CMakeFiles/helios_serial.dir/src/CRC.cpp.o -c /home/zyi/cameramcu/src/CRC.cpp
 
 CMakeFiles/helios_serial.dir/src/CRC.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/helios_serial.dir/src/CRC.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zyi/Desktop/serialca/src/CRC.cpp > CMakeFiles/helios_serial.dir/src/CRC.cpp.i
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zyi/cameramcu/src/CRC.cpp > CMakeFiles/helios_serial.dir/src/CRC.cpp.i
 
 CMakeFiles/helios_serial.dir/src/CRC.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/helios_serial.dir/src/CRC.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zyi/Desktop/serialca/src/CRC.cpp -o CMakeFiles/helios_serial.dir/src/CRC.cpp.s
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zyi/cameramcu/src/CRC.cpp -o CMakeFiles/helios_serial.dir/src/CRC.cpp.s
 
 # Object files for target helios_serial
 helios_serial_OBJECTS = \
@@ -109,7 +109,7 @@ libhelios_serial.a: CMakeFiles/helios_serial.dir/src/Serial.cpp.o
 libhelios_serial.a: CMakeFiles/helios_serial.dir/src/CRC.cpp.o
 libhelios_serial.a: CMakeFiles/helios_serial.dir/build.make
 libhelios_serial.a: CMakeFiles/helios_serial.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/zyi/Desktop/serialca/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX static library libhelios_serial.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/zyi/cameramcu/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX static library libhelios_serial.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/helios_serial.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/helios_serial.dir/link.txt --verbose=$(VERBOSE)
 
@@ -122,6 +122,6 @@ CMakeFiles/helios_serial.dir/clean:
 .PHONY : CMakeFiles/helios_serial.dir/clean
 
 CMakeFiles/helios_serial.dir/depend:
-	cd /home/zyi/Desktop/serialca/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/zyi/Desktop/serialca /home/zyi/Desktop/serialca /home/zyi/Desktop/serialca/build /home/zyi/Desktop/serialca/build /home/zyi/Desktop/serialca/build/CMakeFiles/helios_serial.dir/DependInfo.cmake --color=$(COLOR)
+	cd /home/zyi/cameramcu/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/zyi/cameramcu /home/zyi/cameramcu /home/zyi/cameramcu/build /home/zyi/cameramcu/build /home/zyi/cameramcu/build/CMakeFiles/helios_serial.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/helios_serial.dir/depend
 

@@ -1,7 +1,10 @@
-/home/zyi/Desktop/serialca/build/CMakeFiles/helios_serial.dir
-/home/zyi/Desktop/serialca/build/CMakeFiles/serial_example.dir
-/home/zyi/Desktop/serialca/build/CMakeFiles/edit_cache.dir
-/home/zyi/Desktop/serialca/build/CMakeFiles/rebuild_cache.dir
-/home/zyi/Desktop/serialca/build/hikvision/CMakeFiles/hikvision_camera.dir
-/home/zyi/Desktop/serialca/build/hikvision/CMakeFiles/edit_cache.dir
-/home/zyi/Desktop/serialca/build/hikvision/CMakeFiles/rebuild_cache.dir
+/home/zyi/cameramcu/build/CMakeFiles/helios_serial.dir
+/home/zyi/cameramcu/build/CMakeFiles/serial_example.dir
+/home/zyi/cameramcu/build/CMakeFiles/edit_cache.dir
+/home/zyi/cameramcu/build/CMakeFiles/rebuild_cache.dir
+/home/zyi/cameramcu/build/hikvision/CMakeFiles/hikvision_camera.dir
+/home/zyi/cameramcu/build/hikvision/CMakeFiles/edit_cache.dir
+/home/zyi/cameramcu/build/hikvision/CMakeFiles/rebuild_cache.dir
+/home/zyi/cameramcu/build/serial/CMakeFiles/serial.dir
+/home/zyi/cameramcu/build/serial/CMakeFiles/edit_cache.dir
+/home/zyi/cameramcu/build/serial/CMakeFiles/rebuild_cache.dir

@@ -617,7 +617,7 @@ namespace camera {
             } 
             if (p_host_timestamp){
                 *p_host_timestamp = camera::current_host_timestamp;
-                printf("Host Timestamp: %ld\n", *p_host_timestamp); 
+                // printf("Host Timestamp: %ld\n", *p_host_timestamp); 
             }
             frame_empty = 1;
         } 
@@ -655,10 +655,10 @@ namespace camera {
             // 使用GetImageBuffer替代GetOneFrameTimeout
             nRet = MV_CC_GetImageBuffer(p_handle, &stImageInfo, 10);
             if (nRet != MV_OK) {
-                if (++image_empty_count > 100) {
-                    printf("The Number of Failed Reading Exceed The Set Value!\n");
-                    exit(-1);
-                }
+                // if (++image_empty_count > 100) {
+                //     printf("The Number of Failed Reading Exceed The Set Value!\n");
+                //     exit(-1);
+                // }
                 continue;
             }
             image_empty_count = 0; // 重置空图帧计数
