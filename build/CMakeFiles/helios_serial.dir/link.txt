@@ -1,2 +1,0 @@
-/usr/bin/ar qc libhelios_serial.a CMakeFiles/helios_serial.dir/src/Serial.cpp.o CMakeFiles/helios_serial.dir/src/CRC.cpp.o
-/usr/bin/ranlib libhelios_serial.a
