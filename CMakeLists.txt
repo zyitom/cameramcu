@@ -17,7 +17,12 @@ else()
 endif()
 add_subdirectory(hikvision)
 add_subdirectory(serial)
-
+find_package(Threads REQUIRED)
+find_package(OpenVINO REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(OpenMP)
+find_package(gflags REQUIRED)
+find_package(TBB REQUIRED)
 
 message(STATUS "Configuring for Unix/Linux platform")
 
@@ -40,6 +45,11 @@ add_library(helios_serial ${SERIAL_SOURCES})
 target_include_directories(helios_serial PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
+    ${OpenVINO_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}
+    ${gflags_INCLUDE_DIR}
+    ${TBB_INCLUDE_DIRS}
 )
 
 
@@ -48,8 +58,16 @@ target_link_libraries(serial_example PRIVATE helios_serial)
 
 
   
-find_package(Threads REQUIRED)
-target_link_libraries(serial_example PRIVATE hikvision_camera Threads::Threads serial)
+
+target_link_libraries(serial_example PRIVATE 
+    hikvision_camera 
+    Threads::Threads 
+    serial
+    openvino::runtime
+    ${OpenCV_LIBS}
+    gflags
+    pthread
+    TBB::tbb)
 
 include(GNUInstallDirs)
 

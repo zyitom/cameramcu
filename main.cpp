@@ -12,7 +12,7 @@
 #include <cmath>
 #include <iomanip>  // 用于格式化输出
 #include "hikvision_camera.h"
-
+#include "ovdetector.hpp"
 // 性能优化的关键参数
 constexpr int MAX_QUEUE_SIZE = 10;         // 减少队列大小以降低内存占用
 constexpr float TIME_MATCH_MIN_MS = 7;       // 时间戳匹配最小值 (ms)
@@ -136,24 +136,70 @@ struct alignas(64) MatchedData {          // 64字节对齐以匹配缓存行大
 std::deque<TimestampedFrame> frame_deque;
 std::deque<TimestampedPacket> gyro_deque;
 int last_timestamp;
+
+std::unique_ptr<YOLOXDetector> global_detector;
+std::mutex detector_mutex;
+
+// Initialize the detector during startup
+bool initialize_detector(const std::string& model_path, const std::string& device_name = "GPU") {
+    try {
+        std::lock_guard<std::mutex> lock(detector_mutex);
+        global_detector = std::make_unique<YOLOXDetector>(model_path, device_name);
+        return global_detector->initialize();
+    } catch (const std::exception& e) {
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        std::cerr << "Failed to initialize detector: " << e.what() << std::endl;
+        return false;
+    }
+}
 // 数据处理函数：用于处理匹配的数据对
 void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_data, int64_t timestamp) {
-    // 使用参数避免警告
-    (void)timestamp;
+    // Create a local copy to avoid modifying the original frame
+    cv::Mat processed_frame = frame.clone();
     
-    // 在这里添加你的处理逻辑
-    // 使用 frame 和 gyro_data 进行处理
-    //看看latency的fps
-    // 计算时间戳差异
-    std::cout << "时间戳差异: " << std::abs(static_cast<int>(timestamp - last_timestamp)) << "ms" << std::endl;
-
-    // 显示匹配的图像作为示例
-    cv::imshow("Matched Frame", frame);
+    // Use the detector to find objects in the frame
+    std::vector<Object> detected_objects;
+    
+    {
+        // Use the detector with proper locking to ensure thread safety
+        std::lock_guard<std::mutex> lock(detector_mutex);
+        if (global_detector) {
+            // Get frame dimensions
+            int original_width = frame.cols;
+            int original_height = frame.rows;
+            
+            // Get detector input size and calculate scaling factors
+            auto [model_width, model_height] = global_detector->get_input_size();
+            float scale_x = static_cast<float>(model_width) / original_width;
+            float scale_y = static_cast<float>(model_height) / original_height;
+            
+            // Set scaling for proper detection
+            global_detector->set_scale(scale_x, scale_y);
+            
+            // Perform detection
+            detected_objects = global_detector->detect(frame);
+        }
+    }
+    
+    // Draw the detected objects on the frame
+    if (!detected_objects.empty()) {
+        // processed_frame = visualize_detection(frame, detected_objects);
+        
+        // You can also use gyro data here if needed
+        // For example, you could use gyro data to compensate for camera movement
+        
+        // Log gyro data for debugging or analysis
+        std::lock_guard<std::mutex> lock(cout_mutex);
+        std::cout << "Gyro data - Pitch: " << gyro_data.pitch 
+                  << ", Yaw: " << gyro_data.yaw 
+                  << ", Roll: " << gyro_data.roll 
+                  << " at timestamp: " << timestamp << std::endl;
+    }
+    
+    // Display the processed frame
+    cv::imshow("Detection Results", processed_frame);
     cv::waitKey(1);
-    last_timestamp = timestamp;
-    // 可以在这里添加进一步的处理...
 }
-
 // 相机线程函数 - 优化版
 void camera_thread_func() {
     // 设置线程优先级
@@ -548,6 +594,10 @@ int main(int argc, char* argv[]) {
     std::string port_name = "/dev/ttyACM0";  
     int baud_rate = 92160000;                 
     
+    // Add paths for your detector model
+    std::string model_path = "/home/zyi/Downloads/0405_9744.onnx"; // Replace with your actual model path
+    std::string device_name = "GPU";
+    
     if (argc > 1) {
         port_name = argv[1];
     }
@@ -556,6 +606,15 @@ int main(int argc, char* argv[]) {
         baud_rate = std::stoi(argv[2]);
     }
     
+    if (argc > 3) {
+        model_path = argv[3];
+    }
+    
+    // Initialize the detector before starting threads
+    if (!initialize_detector(model_path, device_name)) {
+        std::cerr << "Failed to initialize the detector. Exiting." << std::endl;
+        return EXIT_FAILURE;
+    }
     // 创建必要的线程
     std::thread cam_thread(camera_thread_func);
     std::thread serial_thread(serial_thread_func, port_name, baud_rate);
@@ -602,7 +661,10 @@ int main(int argc, char* argv[]) {
     serial_thread.join();
     matching_thread.join();
     stats_thread.join();
-    
+    {
+        std::lock_guard<std::mutex> lock(detector_mutex);
+        global_detector.reset();
+    }
     std::cout << "程序已正常退出" << std::endl;
     return 0;
 }
