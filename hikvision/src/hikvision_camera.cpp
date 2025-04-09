@@ -18,7 +18,7 @@ namespace camera {
     uint64_t current_device_timestamp = 0; // 设备时间戳
     int64_t current_host_timestamp = 0;    // 主机时间戳
 
-    struct HKWorkParam {             // 常用信息结构体
+    struct HKWorkParam {             // 结构体
         void *handle;
         MV_CC_DEVICE_INFO *pDeviceInfo;
     };

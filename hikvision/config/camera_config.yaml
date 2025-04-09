@@ -2,11 +2,11 @@ width: 1440
 height: 1080
 Offset_x: 0
 Offset_y: 0
-FrameRateEnable: true
+FrameRateEnable: false
 FrameRate: 300.0
 BurstFrameCount: 1
 ExposureMode: 0
-ExposureTime: 15
+ExposureTime: 4000
 GammaEnable: true
 Gamma: 0.7
 GainAuto: 0
@@ -18,5 +18,5 @@ BalanceRatio_Red: 1400
 BalanceRatio_Green: 1000
 BalanceRatio_Blue: 2000
 TriggerMode: 1
-TriggerSource: 2
+TriggerSource: 0
 LineSelector: 99
