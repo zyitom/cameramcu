@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <condition_variable>
+#include <opencv2/core/mat.hpp>
 #include <string>
 #include <vector>
 #include <queue>
@@ -279,190 +280,223 @@ cv::Mat visualize_detection(const cv::Mat& frame, const std::vector<Object>& obj
     return vis;
 }
 
+
+struct FrameData {
+    std::chrono::system_clock::time_point timestamp;
+    cv::Mat frame;                       // 输入图像
+    std::vector<Object> objects;         // 检测结果
+    bool processed = false;              // 是否已处理完成
+    
+    // 构造函数：创建带图像的输入数据
+    FrameData(const std::chrono::system_clock::time_point& ts, const cv::Mat& img)
+        : timestamp(ts), frame(img) {}
+        
+    // 默认构造函数
+    FrameData() = default;
+    
+    // 添加检测结果
+    void add_detection_results(const std::vector<Object>& objs) {
+        objects = objs;
+        processed = true;
+    }
+    
+    bool has_valid_results() const {
+        return processed && !objects.empty();
+    }
+};
+
 class YOLOXDetector {
-    public:
-        YOLOXDetector(const std::string& model_path, const std::string& device_name = "GPU") 
-            : model_path_(model_path), device_name_(device_name), initialized_(false) {}
-        
-        ~YOLOXDetector() {
-            finished_ireqs_.clear();
-            ireqs_.clear();
-            compiled_model_ = ov::CompiledModel();
+public:
+    YOLOXDetector(const std::string& model_path, const std::string& device_name = "GPU") 
+        : model_path_(model_path), device_name_(device_name), initialized_(false) {}
+    
+    ~YOLOXDetector() {
+        finished_ireqs_.clear();
+        ireqs_.clear();
+        compiled_model_ = ov::CompiledModel();
+        core_ = ov::Core();
+    }
+    
+    bool initialize() {
+        try {
+            // 加载模型
             core_ = ov::Core();
-        }
-        
-        bool initialize() {
-            try {
-                // 加载模型
-                core_ = ov::Core();
-                std::cout << "加载模型: " << model_path_ << std::endl;
-                
-                std::shared_ptr<ov::Model> model = core_.read_model(model_path_);
-                
-                // 配置预处理
-                ov::preprocess::PrePostProcessor ppp(model);
-                ppp.input()
-                    .tensor()
-                    .set_element_type(ov::element::u8)
-                    .set_layout("NHWC")
-                    .set_color_format(ov::preprocess::ColorFormat::BGR);
-                ppp.input().preprocess().convert_element_type(ov::element::f32).convert_color(ov::preprocess::ColorFormat::RGB);
-                ppp.input().model().set_layout("NCHW");
-                ppp.output().tensor().set_element_type(ov::element::f32);
-                
-                model = ppp.build();
-                
-                ov::AnyMap tput{{ov::hint::performance_mode.name(), ov::hint::PerformanceMode::THROUGHPUT}};
-                compiled_model_ = core_.compile_model(model, device_name_, tput);
-                
-                input_shape_ = compiled_model_.input().get_shape();
-                model_height_ = input_shape_[1];  
-                model_width_ = input_shape_[2];
-                
-                // 初始化YOLOX处理器
-                yolox_processor_.init(model_width_, model_height_);
-                
-                uint32_t nireq = compiled_model_.get_property(ov::optimal_number_of_infer_requests);
-                std::cout << "创建 " << nireq << " 个推理请求" << std::endl;
-                
-                ireqs_.resize(nireq);
-                std::generate(ireqs_.begin(), ireqs_.end(), [&] {
-                    return compiled_model_.create_infer_request();
-                });
-                
-                
-                // 初始化完成的推理请求队列
-                for (auto& ireq : ireqs_) {
-                    finished_ireqs_.push_back({ireq, cv::Mat(), false});
-                }
-                
-                initialized_ = true;
-                return true;
-            } 
-            catch (const std::exception& ex) {
-                std::cerr << "初始化异常: " << ex.what() << std::endl;
-                return false;
-            }
-        }
-        
-        // 接收cv::Mat作为输入，返回检测结果
-        std::vector<Object> detect(const cv::Mat& frame) {
-            if (!initialized_) {
-                std::cerr << "检测器未初始化" << std::endl;
-                return {};
+            std::cout << "加载模型: " << model_path_ << std::endl;
+            
+            std::shared_ptr<ov::Model> model = core_.read_model(model_path_);
+            
+            // 配置预处理
+            ov::preprocess::PrePostProcessor ppp(model);
+            ppp.input()
+                .tensor()
+                .set_element_type(ov::element::u8)
+                .set_layout("NHWC")
+                .set_color_format(ov::preprocess::ColorFormat::BGR);
+            ppp.input().preprocess().convert_element_type(ov::element::f32).convert_color(ov::preprocess::ColorFormat::RGB);
+            ppp.input().model().set_layout("NCHW");
+            ppp.output().tensor().set_element_type(ov::element::f32);
+            
+            model = ppp.build();
+            
+            ov::AnyMap tput{{ov::hint::performance_mode.name(), ov::hint::PerformanceMode::THROUGHPUT}};
+            compiled_model_ = core_.compile_model(model, device_name_, tput);
+            
+            input_shape_ = compiled_model_.input().get_shape();
+            model_height_ = input_shape_[1];  
+            model_width_ = input_shape_[2];
+            
+            // 初始化YOLOX处理器
+            yolox_processor_.init(model_width_, model_height_);
+            
+            uint32_t nireq = compiled_model_.get_property(ov::optimal_number_of_infer_requests);
+            std::cout << "创建 " << nireq << " 个推理请求" << std::endl;
+            
+            ireqs_.resize(nireq);
+            std::generate(ireqs_.begin(), ireqs_.end(), [&] {
+                return compiled_model_.create_infer_request();
+            });
+            
+            // 初始化完成的推理请求队列
+            for (auto& ireq : ireqs_) {
+                finished_ireqs_.push_back(TimedIreq(&ireq, FrameData{}, false));
             }
             
-            std::vector<Object> detected_objects;
-            try {
-                // 执行推理
-                std::unique_lock<std::mutex> lock(mutex_);
-                
-                // 等待有完成的推理请求
-                while (!callback_exception_ && finished_ireqs_.empty()) {
-                    cv_.wait(lock);
-                }
-                
-                if (callback_exception_) {
-                    std::rethrow_exception(callback_exception_);
-                }
-                
-                if (!finished_ireqs_.empty()) {
-                    // 获取一个已完成的推理请求
-                    TimedIreq timedIreq = finished_ireqs_.front();
-                    finished_ireqs_.pop_front();
-                    lock.unlock();
-                    
-                    ov::InferRequest& ireq = timedIreq.ireq;
-                    
-                    // 如果已经启动过推理，则这是一个已完成的推理结果
-                    if (timedIreq.has_started && !timedIreq.frame.empty()) {
-                        // 获取模型输出并执行YOLOX后处理
-                        ov::Tensor output_tensor = ireq.get_output_tensor();
-                        detected_objects = yolox_processor_.process(output_tensor);
-                    }
-                    
-                    try {
-                        // 准备输入张量
-                        ov::Tensor input_tensor = preprocess_frame(frame, input_shape_);
-                        ireq.set_input_tensor(input_tensor);
-                        
-                        // 设置回调
-                        ireq.set_callback(
-                            [&ireq, frame, this](std::exception_ptr ex) {
-                                std::unique_lock<std::mutex> lock(this->mutex_);
-                                try {
-                                    if (ex) {
-                                        std::rethrow_exception(ex);
-                                    }
-                                    this->finished_ireqs_.push_back({ireq, frame, true});
-                                } catch (const std::exception&) {
-                                    if (!this->callback_exception_) {
-                                        this->callback_exception_ = std::current_exception();
-                                    }
-                                }
-                                this->cv_.notify_one();
-                            });
-                        
-                        ireq.start_async();
-                    } catch (const std::exception& e) {
-                        std::cerr << "推理异常: " << e.what() << std::endl;
-                        std::unique_lock<std::mutex> lock(mutex_);
-                        finished_ireqs_.push_back({ireq, cv::Mat(), false});
-                        cv_.notify_one();
-                    }
-                }
-                
-                return detected_objects;
-            } 
-            catch (const std::exception& ex) {
-                std::cerr << "检测异常: " << ex.what() << std::endl;
-                return {};
+            initialized_ = true;
+            return true;
+        } 
+        catch (const std::exception& ex) {
+            std::cerr << "初始化异常: " << ex.what() << std::endl;
+            return false;
+        }
+    }
+    
+    // 接收带时间戳的帧，返回更新后的FrameData
+    FrameData detect(const FrameData& input_data) {
+        if (!initialized_) {
+            std::cerr << "检测器未初始化" << std::endl;
+            return input_data; // 返回原始输入，但未处理
+        }
+        
+        FrameData result = input_data; // 默认返回相同的输入数据
+        
+        try {
+            // 执行推理
+            std::unique_lock<std::mutex> lock(mutex_);
+            
+            // 等待有完成的推理请求
+            while (!callback_exception_ && finished_ireqs_.empty()) {
+                cv_.wait(lock);
             }
+            
+            if (callback_exception_) {
+                std::rethrow_exception(callback_exception_);
+            }
+            
+            if (!finished_ireqs_.empty()) {
+                // 获取一个已完成的推理请求
+                TimedIreq timedIreq = finished_ireqs_.front();
+                finished_ireqs_.pop_front();
+                lock.unlock();
+                
+                ov::InferRequest* ireq_ptr = timedIreq.ireq;
+                
+                // 如果已经启动过推理，则这是一个已完成的推理结果
+                if (timedIreq.has_started && !timedIreq.frame_data.frame.empty()) {
+                    ov::Tensor output_tensor = ireq_ptr->get_output_tensor();
+                    std::vector<Object> detected_objects = yolox_processor_.process(output_tensor);
+                      
+                    FrameData completed_result = timedIreq.frame_data;
+                    completed_result.add_detection_results(detected_objects);
+                    return completed_result;
+                }
+                
+                try {
+                    
+                    ov::Tensor input_tensor = preprocess_frame(input_data.frame, input_shape_);
+                    ireq_ptr->set_input_tensor(input_tensor);
+                    
+                    // 设置回调，将时间戳和结果关联起来
+                    ireq_ptr->set_callback(
+                        [ireq_ptr, input_data, this](std::exception_ptr ex) {
+                            std::unique_lock<std::mutex> lock(this->mutex_);
+                            try {
+                                if (ex) {
+                                    std::rethrow_exception(ex);
+                                }
+                                this->finished_ireqs_.push_back(TimedIreq(ireq_ptr, input_data, true));
+                            } catch (const std::exception&) {
+                                if (!this->callback_exception_) {
+                                    this->callback_exception_ = std::current_exception();
+                                }
+                            }
+                            this->cv_.notify_one();
+                        });
+                    
+                    ireq_ptr->start_async();
+                } catch (const std::exception& e) {
+                    std::cerr << "推理异常: " << e.what() << std::endl;
+                    std::unique_lock<std::mutex> lock(mutex_);
+                    finished_ireqs_.push_back(TimedIreq(ireq_ptr, FrameData{}, false));
+                    cv_.notify_one();
+                }
+            }
+
+            return result;
+        } 
+        catch (const std::exception& ex) {
+            std::cerr << "检测异常: " << ex.what() << std::endl;
+            return result;
         }
+    }
+    
+    // 设置输入缩放系数
+    void set_scale(float scale_x, float scale_y) {
+        yolox_processor_ = YOLOXProcessor(scale_x, scale_y);
+        yolox_processor_.init(model_width_, model_height_);
+    }
+    
+    // 获取模型输入尺寸
+    std::pair<int, int> get_input_size() const {
+        return {model_width_, model_height_};
+    }
+    
+    // 预处理帧
+    static ov::Tensor preprocess_frame(const cv::Mat& input_frame, const ov::Shape& input_shape) {
+        cv::Mat resized_frame;
+        cv::resize(input_frame, resized_frame, cv::Size(input_shape[2], input_shape[1]), 0, 0, cv::INTER_LINEAR);
+        return ov::Tensor(ov::element::u8, input_shape, resized_frame.data);
+    }
+    
+private:
+    // 表示带时间戳的推理请求
+    struct TimedIreq {
+        ov::InferRequest* ireq;      // 指针代替引用
+        FrameData frame_data;        // 关联的带时间戳的帧和结果
+        bool has_started;            // 是否已启动推理
         
-        // 设置输入缩放系数
-        void set_scale(float scale_x, float scale_y) {
-            yolox_processor_ = YOLOXProcessor(scale_x, scale_y);
-            yolox_processor_.init(model_width_, model_height_);
-        }
+        // 构造函数
+        TimedIreq(ov::InferRequest* req, const FrameData& data, bool started)
+            : ireq(req), frame_data(data), has_started(started) {}
         
-        // 获取模型输入尺寸
-        std::pair<int, int> get_input_size() const {
-            return {model_width_, model_height_};
-        }
-        
-        // 预处理帧
-        static ov::Tensor preprocess_frame(const cv::Mat& input_frame, const ov::Shape& input_shape) {
-            cv::Mat resized_frame;
-            cv::resize(input_frame, resized_frame, cv::Size(input_shape[2], input_shape[1]), 0, 0, cv::INTER_LINEAR);
-            return ov::Tensor(ov::element::u8, input_shape, resized_frame.data);
-        }
-        
-    private:
-        // 表示带时间戳的推理请求
-        struct TimedIreq {
-            ov::InferRequest& ireq;  // 引用
-            cv::Mat frame;           // 关联的帧
-            bool has_started;        // 是否已启动推理
-        };
-        
-        std::string model_path_;
-        std::string device_name_;
-        bool initialized_;
-        
-        ov::Core core_;
-        ov::CompiledModel compiled_model_;
-        ov::Shape input_shape_;
-        int model_width_;
-        int model_height_;
-        
-        YOLOXProcessor yolox_processor_;
-        std::vector<ov::InferRequest> ireqs_;
-        
-        std::mutex mutex_;
-        std::condition_variable cv_;
-        std::exception_ptr callback_exception_;
-        std::deque<TimedIreq> finished_ireqs_;
+        // 默认构造函数
+        TimedIreq() : ireq(nullptr), has_started(false) {}
     };
-
-
+    
+    std::string model_path_;
+    std::string device_name_;
+    bool initialized_;
+    
+    ov::Core core_;
+    ov::CompiledModel compiled_model_;
+    ov::Shape input_shape_;
+    int model_width_;
+    int model_height_;
+    
+    YOLOXProcessor yolox_processor_;
+    std::vector<ov::InferRequest> ireqs_;
+    
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    std::exception_ptr callback_exception_;
+    std::deque<TimedIreq> finished_ireqs_;
+};
