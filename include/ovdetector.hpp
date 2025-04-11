@@ -11,7 +11,7 @@
 #include <mutex>
 #include <opencv2/opencv.hpp>
 #include "openvino/openvino.hpp"
-
+#include <future>
 
 constexpr int NUM_APEX = 4;      
 constexpr int NUM_CLASS = 7;     
@@ -245,7 +245,7 @@ cv::Mat visualize_detection(const cv::Mat& frame, const std::vector<Object>& obj
         cv::Scalar(255, 255, 255)  // 白色
     };
     
-    cv::Mat vis = frame.clone();
+    cv::Mat vis = frame;
     
     for (const auto& obj : objects) {
         // 绘制多边形
@@ -311,10 +311,20 @@ public:
         : model_path_(model_path), device_name_(device_name), initialized_(false) {}
     
     ~YOLOXDetector() {
-        finished_ireqs_.clear();
-        ireqs_.clear();
-        compiled_model_ = ov::CompiledModel();
-        core_ = ov::Core();
+        for (auto& ireq : ireqs_) {
+        try {
+            ireq.cancel();
+        } catch (...) {
+        
+        }
+    }
+    
+    
+    // 清空所有资源
+    available_ireqs_.clear();
+    ireqs_.clear();
+    compiled_model_ = ov::CompiledModel();
+    core_ = ov::Core();
     }
     
     bool initialize() {
@@ -358,7 +368,7 @@ public:
             
             // 初始化完成的推理请求队列
             for (auto& ireq : ireqs_) {
-                finished_ireqs_.push_back(TimedIreq(&ireq, FrameData{}, false));
+                available_ireqs_.push_back(TimedIreq(&ireq, FrameData{}, false));
             }
             
             initialized_ = true;
@@ -371,82 +381,79 @@ public:
     }
     
     // 接收带时间戳的帧，返回更新后的FrameData
-    FrameData detect(const FrameData& input_data) {
-        if (!initialized_) {
-            std::cerr << "检测器未初始化" << std::endl;
-            return input_data; // 返回原始输入，但未处理
+    // 修改 YOLOXDetector::detect 方法，检查输入图像是否为空
+    // 在YOLOXDetector类中添加
+    std::future<FrameData> submit_frame_async(const FrameData& input_data) {
+        // 使用shared_ptr包装promise，使lambda可复制
+        auto promise_ptr = std::make_shared<std::promise<FrameData>>();
+        std::future<FrameData> future = promise_ptr->get_future();
+        
+        if (!initialized_ || input_data.frame.empty()) {
+            promise_ptr->set_value(input_data);  // 返回原始帧
+            return future;
         }
         
-        FrameData result = input_data; // 默认返回相同的输入数据
+        std::unique_lock<std::mutex> lock(mutex_);
         
-        try {
-            // 执行推理
-            std::unique_lock<std::mutex> lock(mutex_);
-            
-            // 等待有完成的推理请求
-            while (!callback_exception_ && finished_ireqs_.empty()) {
-                cv_.wait(lock);
-            }
-            
-            if (callback_exception_) {
-                std::rethrow_exception(callback_exception_);
-            }
-            
-            if (!finished_ireqs_.empty()) {
-                // 获取一个已完成的推理请求
-                TimedIreq timedIreq = finished_ireqs_.front();
-                finished_ireqs_.pop_front();
-                lock.unlock();
-                
-                ov::InferRequest* ireq_ptr = timedIreq.ireq;
-                
-                // 如果已经启动过推理，则这是一个已完成的推理结果
-                if (timedIreq.has_started && !timedIreq.frame_data.frame.empty()) {
-                    ov::Tensor output_tensor = ireq_ptr->get_output_tensor();
-                    std::vector<Object> detected_objects = yolox_processor_.process(output_tensor);
-                      
-                    FrameData completed_result = timedIreq.frame_data;
-                    completed_result.add_detection_results(detected_objects);
-                    return completed_result;
-                }
-                
-                try {
-                    
-                    ov::Tensor input_tensor = preprocess_frame(input_data.frame, input_shape_);
-                    ireq_ptr->set_input_tensor(input_tensor);
-                    
-                    // 设置回调，将时间戳和结果关联起来
-                    ireq_ptr->set_callback(
-                        [ireq_ptr, input_data, this](std::exception_ptr ex) {
-                            std::unique_lock<std::mutex> lock(this->mutex_);
-                            try {
-                                if (ex) {
-                                    std::rethrow_exception(ex);
-                                }
-                                this->finished_ireqs_.push_back(TimedIreq(ireq_ptr, input_data, true));
-                            } catch (const std::exception&) {
-                                if (!this->callback_exception_) {
-                                    this->callback_exception_ = std::current_exception();
-                                }
-                            }
-                            this->cv_.notify_one();
-                        });
-                    
-                    ireq_ptr->start_async();
-                } catch (const std::exception& e) {
-                    std::cerr << "推理异常: " << e.what() << std::endl;
-                    std::unique_lock<std::mutex> lock(mutex_);
-                    finished_ireqs_.push_back(TimedIreq(ireq_ptr, FrameData{}, false));
-                    cv_.notify_one();
-                }
-            }
-
-            return result;
-        } 
-        catch (const std::exception& ex) {
-            std::cerr << "检测异常: " << ex.what() << std::endl;
-            return result;
+        // 等待有空闲的推理请求
+        while (!callback_exception_ && available_ireqs_.empty()) {
+            cv_.wait(lock);
         }
+        
+        if (callback_exception_) {
+            promise_ptr->set_exception(callback_exception_);
+            return future;
+        }
+        
+        if (!available_ireqs_.empty()) {
+            TimedIreq timedIreq = available_ireqs_.front();
+            available_ireqs_.pop_front();
+            lock.unlock();
+            
+            ov::InferRequest* ireq_ptr = timedIreq.ireq;
+            
+            try {
+                ov::Tensor input_tensor = preprocess_frame(input_data.frame, input_shape_);
+                ireq_ptr->set_input_tensor(input_tensor);
+                
+                ireq_ptr->set_callback(
+                    [ireq_ptr, input_data, promise_ptr, this](std::exception_ptr ex) {
+                        std::unique_lock<std::mutex> lock(this->mutex_);
+                        try {
+                            
+                               
+                                ov::Tensor output_tensor = ireq_ptr->get_output_tensor();
+                                std::vector<Object> detected_objects = this->yolox_processor_.process(output_tensor);
+                                
+                                FrameData result = input_data;
+                                result.add_detection_results(detected_objects);
+                                
+                                // 设置结果
+                                promise_ptr->set_value(result);
+                            
+                            
+                            // 将推理请求放回空闲队列
+                            this->available_ireqs_.push_back(TimedIreq(ireq_ptr, FrameData{}, false));
+                        } catch (const std::exception& e) {
+                            promise_ptr->set_exception(std::current_exception());
+                            this->available_ireqs_.push_back(TimedIreq(ireq_ptr, FrameData{}, false));
+                        }
+                        this->cv_.notify_one();
+                    });
+                
+                ireq_ptr->start_async();
+            } catch (const std::exception& e) {
+                std::cerr << "推理异常: " << e.what() << std::endl;
+                promise_ptr->set_exception(std::current_exception());
+                std::unique_lock<std::mutex> lock(mutex_);
+                available_ireqs_.push_back(TimedIreq(ireq_ptr, FrameData{}, false));
+                cv_.notify_one();
+            }
+        } else {
+            promise_ptr->set_value(input_data);  // 如果没有可用的推理请求，返回原始帧
+        }
+        
+        return future;
     }
     
     // 设置输入缩放系数
@@ -498,5 +505,5 @@ private:
     std::mutex mutex_;
     std::condition_variable cv_;
     std::exception_ptr callback_exception_;
-    std::deque<TimedIreq> finished_ireqs_;
+    std::deque<TimedIreq> available_ireqs_;
 };

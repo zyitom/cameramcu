@@ -13,12 +13,13 @@
 #include <iomanip>  // 用于格式化输出
 #include "hikvision_camera.h"
 #include "ovdetector.hpp"
+#include "optional"
 // 性能优化的关键参数
 constexpr int MAX_QUEUE_SIZE = 10;         // 减少队列大小以降低内存占用
 constexpr float TIME_MATCH_MIN_MS = 7;       // 时间戳匹配最小值 (ms)
 constexpr float TIME_MATCH_MAX_MS = 9;  
 constexpr size_t BUFFER_SIZE = 32;         // 串口缓冲区大小，提高为2的幂次方以优化内存对齐
-
+FrameData detector_input;
 // 核心状态控制
 std::atomic<bool> running(true);
 std::atomic<bool> camera_initialized(false);
@@ -131,8 +132,7 @@ struct alignas(64) MatchedData {          // 64字节对齐以匹配缓存行大
         : frame(f.clone()), gyro_data(g), timestamp(ts) {}
 };
 
-// 优化数据存储：预分配内存的环形缓冲区
-// 使用双端队列提高插入和删除效率
+
 std::deque<TimestampedFrame> frame_deque;
 std::deque<TimestampedPacket> gyro_deque;
 int last_timestamp;
@@ -152,53 +152,41 @@ bool initialize_detector(const std::string& model_path, const std::string& devic
         return false;
     }
 }
-// 数据处理函数：用于处理匹配的数据对
+constexpr int MAX_PENDING_RESULTS = 5; // 限制挂起的结果数量
+std::mutex pending_results_mutex;
+// 用于存储异步处理的结果
+std::deque<std::tuple<int64_t, helios::MCUPacket, std::future<FrameData>>> pending_results;
+
+// 用全局异步检测函数替换原有的process_matched_pair函数
 void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_data, int64_t timestamp) {
-    // Create a local copy to avoid modifying the original frame
-    cv::Mat processed_frame = frame.clone();
     
-    // Use the detector to find objects in the frame
-    std::vector<Object> detected_objects;
+    auto input_timestamp = std::chrono::system_clock::now();
+    FrameData input_data(input_timestamp, frame);
     
+    // 异步提交检测任务（不阻塞主线程）
+    std::future<FrameData> future;
     {
-        // Use the detector with proper locking to ensure thread safety
         std::lock_guard<std::mutex> lock(detector_mutex);
         if (global_detector) {
-            // Get frame dimensions
-            int original_width = frame.cols;
-            int original_height = frame.rows;
-            
-            // Get detector input size and calculate scaling factors
-            auto [model_width, model_height] = global_detector->get_input_size();
-            float scale_x = static_cast<float>(model_width) / original_width;
-            float scale_y = static_cast<float>(model_height) / original_height;
-            
-            // Set scaling for proper detection
-            global_detector->set_scale(scale_x, scale_y);
-            
-            // Perform detection
-            detected_objects = global_detector->detect(frame);
+            future = global_detector->submit_frame_async(input_data);
+        } else {
+            // 如果检测器不可用，立即返回
+            return;
         }
     }
     
-    // Draw the detected objects on the frame
-    if (!detected_objects.empty()) {
-        // processed_frame = visualize_detection(frame, detected_objects);
+    // 添加到结果处理队列（可以在另一个线程中处理）
+    {
+        std::lock_guard<std::mutex> lock(pending_results_mutex);
+        pending_results.push_back({timestamp, gyro_data, std::move(future)});
         
-        // You can also use gyro data here if needed
-        // For example, you could use gyro data to compensate for camera movement
-        
-        // Log gyro data for debugging or analysis
-        std::lock_guard<std::mutex> lock(cout_mutex);
-        std::cout << "Gyro data - Pitch: " << gyro_data.pitch 
-                  << ", Yaw: " << gyro_data.yaw 
-                  << ", Roll: " << gyro_data.roll 
-                  << " at timestamp: " << timestamp << std::endl;
+        // 限制队列大小，避免内存积累
+        if (pending_results.size() > MAX_PENDING_RESULTS) {
+            pending_results.pop_front();
+        }
     }
     
-    // Display the processed frame
-    cv::imshow("Detection Results", processed_frame);
-    cv::waitKey(1);
+   
 }
 // 相机线程函数 - 优化版
 void camera_thread_func() {
@@ -595,7 +583,7 @@ int main(int argc, char* argv[]) {
     int baud_rate = 92160000;                 
     
     // Add paths for your detector model
-    std::string model_path = "/home/zyi/Downloads/0405_9744.onnx"; // Replace with your actual model path
+    std::string model_path = "/home/zyi/Downloads/409_9704.onnx"; // Replace with your actual model path
     std::string device_name = "GPU";
     
     if (argc > 1) {
