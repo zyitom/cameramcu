@@ -1,4 +1,4 @@
-#include "Serial.hpp"
+#define BOOST_BIND_GLOBAL_PLACEHOLDERS // 解决boost::bind的编译警告#include "Serial.hpp"
 #include <serial/serial.h>
 #include "Protocol.hpp"
 #include <iostream>
@@ -7,102 +7,39 @@
 #include <chrono>
 #include <memory>
 #include <atomic>
-#include <mutex>
-#include <deque>
 #include <cmath>
-#include <iomanip>  // 用于格式化输出
 #include "hikvision_camera.h"
 #include "ovdetector.hpp"
 #include "optional"
+
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/lock_guard.hpp>
+#include <boost/thread/condition_variable.hpp>
+#include <boost/lockfree/queue.hpp>
+#include <boost/circular_buffer.hpp>
+#include <boost/thread/thread.hpp>
+#include <boost/bind.hpp>
+#include <future> // 使用std::future和std::shared_future
+
 // 性能优化的关键参数
 constexpr int MAX_QUEUE_SIZE = 10;         // 减少队列大小以降低内存占用
-constexpr float TIME_MATCH_MIN_MS = 7;       // 时间戳匹配最小值 (ms)
-constexpr float TIME_MATCH_MAX_MS = 9;  
+constexpr float TIME_MATCH_MIN_MS = 7;     // 时间戳匹配最小值 (ms)
+constexpr float TIME_MATCH_MAX_MS = 9;     // 时间戳匹配最大值 (ms)
 constexpr size_t BUFFER_SIZE = 32;         // 串口缓冲区大小，提高为2的幂次方以优化内存对齐
+
 FrameData detector_input;
 // 核心状态控制
 std::atomic<bool> running(true);
 std::atomic<bool> camera_initialized(false);
 
-// 使用单独的线程锁，减少全局锁争用
-std::mutex cout_mutex;
-std::mutex frame_deque_mutex;
-std::mutex gyro_deque_mutex;
-std::mutex stats_mutex;  // 用于保护统计数据
+// 使用Boost线程锁，减少全局锁争用
+boost::mutex cout_mutex;
+boost::mutex frame_queue_mutex;
+boost::mutex gyro_queue_mutex;
 
 // 无锁数据处理的原子标志
 std::atomic<bool> new_frame_available(false);
 std::atomic<bool> new_gyro_available(false);
-
-// 添加用于跟踪匹配帧率的结构体
-struct MatchStats {
-    int matched_count = 0;
-    int total_frames = 0;
-    int total_gyro = 0;
-    std::chrono::time_point<std::chrono::steady_clock> last_report_time;
-    std::vector<int> time_diffs;  // 存储时间戳差异统计
-
-    MatchStats() {
-        last_report_time = std::chrono::steady_clock::now();
-    }
-    
-    void add_match(int64_t time_diff) {
-        matched_count++;
-        time_diffs.push_back(std::abs(static_cast<int>(time_diff)));
-    }
-    
-    void add_frame() {
-        total_frames++;
-    }
-    
-    void add_gyro() {
-        total_gyro++;
-    }
-    
-    // 打印统计信息并重置计数器
-    void report_and_reset() {
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_report_time).count();
-        
-        if (elapsed >= 1000) {  // 每秒打印一次
-            float match_rate = (matched_count * 1000.0f) / elapsed;
-            float frame_rate = (total_frames * 1000.0f) / elapsed;
-            float gyro_rate = (total_gyro * 1000.0f) / elapsed;
-            
-            std::lock_guard<std::mutex> lock(cout_mutex);
-            std::cout << "\n--- 匹配统计信息 ---" << std::endl;
-            std::cout << std::fixed << std::setprecision(2);
-            std::cout << "相机帧率: " << frame_rate << " FPS" << std::endl;
-            std::cout << "陀螺仪数据率: " << gyro_rate << " Hz" << std::endl;
-            std::cout << "匹配帧率: " << match_rate << " FPS" << std::endl;
-            std::cout << "匹配率: " << (matched_count * 100.0f / (total_frames > 0 ? total_frames : 1)) << "%" << std::endl;
-            
-            // 计算时间差异统计
-            if (!time_diffs.empty()) {
-                int min_diff = *std::min_element(time_diffs.begin(), time_diffs.end());
-                int max_diff = *std::max_element(time_diffs.begin(), time_diffs.end());
-                float avg_diff = 0;
-                for (int diff : time_diffs) {
-                    avg_diff += diff;
-                }
-                avg_diff /= time_diffs.size();
-                
-                std::cout << "时间戳差异: 最小=" << min_diff << "ms, 平均=" << avg_diff 
-                          << "ms, 最大=" << max_diff << "ms" << std::endl;
-                std::cout << "--------------------" << std::endl;
-            }
-            
-            // 重置计数器和时间
-            matched_count = 0;
-            total_frames = 0;
-            total_gyro = 0;
-            time_diffs.clear();
-            last_report_time = now;
-        }
-    }
-};
-
-MatchStats match_stats;  // 全局统计对象
 
 // 数据结构优化：使用内存对齐且尽量避免虚拟函数以减少缓存未命中
 // 使用struct而非class，避免不必要的封装开销
@@ -132,62 +69,64 @@ struct alignas(64) MatchedData {          // 64字节对齐以匹配缓存行大
         : frame(f.clone()), gyro_data(g), timestamp(ts) {}
 };
 
-
-std::deque<TimestampedFrame> frame_deque;
-std::deque<TimestampedPacket> gyro_deque;
+// 使用boost::circular_buffer替代std::deque,提高性能
+boost::circular_buffer<TimestampedFrame> frame_queue(MAX_QUEUE_SIZE);
+boost::circular_buffer<TimestampedPacket> gyro_queue(MAX_QUEUE_SIZE);
 int last_timestamp;
 
 std::unique_ptr<YOLOXDetector> global_detector;
-std::mutex detector_mutex;
+boost::mutex detector_mutex;
 
 // Initialize the detector during startup
 bool initialize_detector(const std::string& model_path, const std::string& device_name = "GPU") {
     try {
-        std::lock_guard<std::mutex> lock(detector_mutex);
+        boost::lock_guard<boost::mutex> lock(detector_mutex);
         global_detector = std::make_unique<YOLOXDetector>(model_path, device_name);
         return global_detector->initialize();
     } catch (const std::exception& e) {
-        std::lock_guard<std::mutex> lock(cout_mutex);
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
         std::cerr << "Failed to initialize detector: " << e.what() << std::endl;
         return false;
     }
 }
-constexpr int MAX_PENDING_RESULTS = 5; // 限制挂起的结果数量
-std::mutex pending_results_mutex;
-// 用于存储异步处理的结果
-std::deque<std::tuple<int64_t, helios::MCUPacket, std::future<FrameData>>> pending_results;
 
-// 用全局异步检测函数替换原有的process_matched_pair函数
+constexpr int MAX_PENDING_RESULTS = 5; // 限制挂起的结果数量
+boost::mutex pending_results_mutex;
+
+// 使用互斥锁和队列处理异步结果，使用shared_future以支持复制
+std::deque<std::tuple<int64_t, helios::MCUPacket, std::shared_future<FrameData>>> pending_results;
+
+// 用全局异步检测函数替代原有的process_matched_pair函数
 void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_data, int64_t timestamp) {
-    
     auto input_timestamp = std::chrono::system_clock::now();
     FrameData input_data(input_timestamp, frame);
     
     // 异步提交检测任务（不阻塞主线程）
-    std::future<FrameData> future;
+    std::shared_future<FrameData> shared_future;
     {
-        std::lock_guard<std::mutex> lock(detector_mutex);
+        boost::lock_guard<boost::mutex> lock(detector_mutex);
         if (global_detector) {
-            future = global_detector->submit_frame_async(input_data);
+            // 将std::future转换为std::shared_future
+            std::future<FrameData> future = global_detector->submit_frame_async(input_data);
+            shared_future = future.share();
         } else {
             // 如果检测器不可用，立即返回
             return;
         }
     }
     
-    // 添加到结果处理队列（可以在另一个线程中处理）
+    // 添加到结果处理队列
     {
-        std::lock_guard<std::mutex> lock(pending_results_mutex);
-        pending_results.push_back({timestamp, gyro_data, std::move(future)});
+        boost::lock_guard<boost::mutex> lock(pending_results_mutex);
+        pending_results.emplace_back(timestamp, gyro_data, shared_future);
         
-        // 限制队列大小，避免内存积累
+        // 限制队列大小
         if (pending_results.size() > MAX_PENDING_RESULTS) {
             pending_results.pop_front();
         }
     }
-    
-   
 }
+
 // 相机线程函数 - 优化版
 void camera_thread_func() {
     // 设置线程优先级
@@ -205,14 +144,14 @@ void camera_thread_func() {
     try {
         hikCam.Init(true, camera_config_path, intrinsic_para_path, time_start);
     } catch (const std::exception& e) {
-        std::lock_guard<std::mutex> lock(cout_mutex);
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
         std::cerr << "相机初始化失败: " << e.what() << std::endl;
         running = false;
         return;
     }
     
     {
-        std::lock_guard<std::mutex> lock(cout_mutex);
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
         std::cout << "海康相机初始化成功" << std::endl;
     }
     
@@ -235,24 +174,15 @@ void camera_thread_func() {
         bool hasNew = hikCam.ReadImg(frame, &device_ts, &host_ts);
         
         if (hasNew && !frame.empty()) {
-            // 更新统计
-            {
-                std::lock_guard<std::mutex> lock(stats_mutex);
-                match_stats.add_frame();
-            }
-            
             // 快速路径：如果队列为空，直接添加而不需要锁
-            if (frame_deque.empty() && !new_frame_available.load(std::memory_order_relaxed)) {
-                std::lock_guard<std::mutex> lock(frame_deque_mutex);
-                frame_deque.emplace_back(frame, host_ts);
+            if (frame_queue.empty() && !new_frame_available.load(std::memory_order_relaxed)) {
+                boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
+                frame_queue.push_back(TimestampedFrame(frame, host_ts));
                 new_frame_available.store(true, std::memory_order_release);
             } else {
-                std::lock_guard<std::mutex> lock(frame_deque_mutex);
-                // 限制队列大小
-                if (frame_deque.size() >= static_cast<size_t>(MAX_QUEUE_SIZE)) {
-                    frame_deque.pop_front();  // 移除最老的帧
-                }
-                frame_deque.emplace_back(frame, host_ts);
+                boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
+                // boost::circular_buffer会自动处理大小限制
+                frame_queue.push_back(TimestampedFrame(frame, host_ts));
                 new_frame_available.store(true, std::memory_order_release);
             }
             
@@ -267,7 +197,7 @@ void camera_thread_func() {
     }
     
     {
-        std::lock_guard<std::mutex> lock(cout_mutex);
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
         std::cout << "相机线程已结束" << std::endl;
     }
 }
@@ -275,7 +205,7 @@ void camera_thread_func() {
 // 串口线程函数 - 优化版
 void serial_thread_func(const std::string& port_name, int baud_rate) {
     {
-        std::lock_guard<std::mutex> lock(cout_mutex);
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
         std::cout << "Opening serial port: " << port_name << " at " << baud_rate << " baud" << std::endl;
     }
     
@@ -297,14 +227,14 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
         serial_port.open();
         
         if (!serial_port.isOpen()) {
-            std::lock_guard<std::mutex> lock(cout_mutex);
+            boost::lock_guard<boost::mutex> lock(cout_mutex);
             std::cerr << "Failed to open serial port." << std::endl;
             running = false;
             return;
         }
     } catch (const std::exception& e) {
         {
-            std::lock_guard<std::mutex> lock(cout_mutex);
+            boost::lock_guard<boost::mutex> lock(cout_mutex);
             std::cerr << "Failed to open serial port: " << e.what() << std::endl;
         }
         running = false;
@@ -318,7 +248,7 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
     
     // 直接进入主处理循环
     {
-        std::lock_guard<std::mutex> lock(cout_mutex);
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
         std::cout << "开始读取串口数据" << std::endl;
     }
     
@@ -343,29 +273,20 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
                     helios::MCUPacket packet;
                     memcpy(&packet, buffer.data(), sizeof(helios::MCUPacket));
                     
-                    // 更新统计
-                    {
-                        std::lock_guard<std::mutex> lock(stats_mutex);
-                        match_stats.add_gyro();
-                    }
-                    
                     // 快速路径：如果队列为空，直接添加
-                    if (gyro_deque.empty() && !new_gyro_available.load(std::memory_order_relaxed)) {
-                        std::lock_guard<std::mutex> lock(gyro_deque_mutex);
-                        gyro_deque.emplace_back(packet, unix_timestamp_ms);
+                    if (gyro_queue.empty() && !new_gyro_available.load(std::memory_order_relaxed)) {
+                        boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
+                        gyro_queue.push_back(TimestampedPacket(packet, unix_timestamp_ms));
                         new_gyro_available.store(true, std::memory_order_release);
                     } else {
-                        std::lock_guard<std::mutex> lock(gyro_deque_mutex);
-                        // 限制队列大小
-                        if (gyro_deque.size() >= static_cast<size_t>(MAX_QUEUE_SIZE)) {
-                            gyro_deque.pop_front();  // 移除最老的数据
-                        }
-                        gyro_deque.emplace_back(packet, unix_timestamp_ms);
+                        boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
+                        // boost::circular_buffer会自动处理大小限制
+                        gyro_queue.push_back(TimestampedPacket(packet, unix_timestamp_ms));
                         new_gyro_available.store(true, std::memory_order_release);
                     }
                 }
             } catch (const std::exception& e) {
-                std::lock_guard<std::mutex> lock(cout_mutex);
+                boost::lock_guard<boost::mutex> lock(cout_mutex);
                 std::cerr << "Error reading from serial port: " << e.what() << std::endl;
             }
         } else {
@@ -378,30 +299,8 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
     serial_port.close();
     
     {
-        std::lock_guard<std::mutex> lock(cout_mutex);
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
         std::cout << "串口线程已结束" << std::endl;
-    }
-}
-
-// 统计线程 - 用于定期打印统计信息
-void stats_thread_func() {
-    // 等待相机初始化完成
-    while (running && !camera_initialized.load(std::memory_order_acquire)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    
-    if (!running) {
-        return;
-    }
-    
-    while (running) {
-        {
-            std::lock_guard<std::mutex> lock(stats_mutex);
-            match_stats.report_and_reset();
-        }
-        
-        // 每100毫秒检查一次，避免频繁锁争用
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
 
@@ -417,7 +316,7 @@ void data_matching_thread_func() {
     }
     
     {
-        std::lock_guard<std::mutex> lock(cout_mutex);
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
         std::cout << "开始数据匹配线程" << std::endl;
     }
     
@@ -438,17 +337,19 @@ void data_matching_thread_func() {
         
         // 获取相机帧
         {
-            std::lock_guard<std::mutex> lock(frame_deque_mutex);
-            if (!frame_deque.empty()) {
-                local_frames.assign(frame_deque.begin(), frame_deque.end());
+            boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
+            if (!frame_queue.empty()) {
+                local_frames.reserve(frame_queue.size());
+                std::copy(frame_queue.begin(), frame_queue.end(), std::back_inserter(local_frames));
             }
         }
         
         // 获取陀螺仪数据
         {
-            std::lock_guard<std::mutex> lock(gyro_deque_mutex);
-            if (!gyro_deque.empty()) {
-                local_gyros.assign(gyro_deque.begin(), gyro_deque.end());
+            boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
+            if (!gyro_queue.empty()) {
+                local_gyros.reserve(gyro_queue.size());
+                std::copy(gyro_queue.begin(), gyro_queue.end(), std::back_inserter(local_gyros));
             }
         }
         
@@ -480,15 +381,6 @@ void data_matching_thread_func() {
                 matched_frame = current_frame;
                 matched_gyro = current_gyro;
                 found_match = true;
-                
-                // 记录匹配信息用于调试
-                // {
-                //     std::lock_guard<std::mutex> lock(cout_mutex);
-                //     std::cout << "找到匹配: 帧时间戳=" << matched_frame.timestamp 
-                //               << ", 陀螺仪时间戳=" << matched_gyro.timestamp 
-                //               << ", 时间差=" << time_diff << "ms" << std::endl;
-                // }
-                
                 break; // 找到第一个匹配就退出
             } 
             
@@ -499,42 +391,31 @@ void data_matching_thread_func() {
                 // 陀螺仪时间戳较早，移动到下一个陀螺仪数据
                 gyro_idx++;
             }
-            
         }
         
         if (found_match) {
-            // 更新匹配统计
-            {
-                std::lock_guard<std::mutex> lock(stats_mutex);
-                match_stats.add_match(matched_frame.timestamp - matched_gyro.timestamp);
-            }
-            // std::cout << "匹配成功: 帧时间戳=" << matched_frame.timestamp 
-            //           << ", 陀螺仪时间戳=" << matched_gyro.timestamp 
-            //           << ", 时间差=" << (matched_frame.timestamp - matched_gyro.timestamp) << "ms" << std::endl;
             // 处理匹配的数据对
             process_matched_pair(matched_frame.frame, matched_gyro.packet, matched_gyro.timestamp);
             
             // 移除已匹配及更早的数据
             {
-                std::lock_guard<std::mutex> lock(frame_deque_mutex);
-                auto it = frame_deque.begin();
-                while (it != frame_deque.end() && it->timestamp <= matched_frame.timestamp) {
-                    it = frame_deque.erase(it);
+                boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
+                while (!frame_queue.empty() && frame_queue.front().timestamp <= matched_frame.timestamp) {
+                    frame_queue.pop_front();
                 }
                 
-                if (frame_deque.empty()) {
+                if (frame_queue.empty()) {
                     new_frame_available.store(false, std::memory_order_release);
                 }
             }
             
             {
-                std::lock_guard<std::mutex> lock(gyro_deque_mutex);
-                auto it = gyro_deque.begin();
-                while (it != gyro_deque.end() && it->timestamp <= matched_gyro.timestamp) {
-                    it = gyro_deque.erase(it);
+                boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
+                while (!gyro_queue.empty() && gyro_queue.front().timestamp <= matched_gyro.timestamp) {
+                    gyro_queue.pop_front();
                 }
                 
-                if (gyro_deque.empty()) {
+                if (gyro_queue.empty()) {
                     new_gyro_available.store(false, std::memory_order_release);
                 }
             }
@@ -547,25 +428,17 @@ void data_matching_thread_func() {
                 // 如果最老的帧时间戳比最老的陀螺仪数据时间戳早超过10ms，则无法匹配
                 if (oldest_frame.timestamp + 10 < oldest_gyro.timestamp) {
                     // 最老的帧已经太老，无法与任何陀螺仪数据匹配
-                    std::lock_guard<std::mutex> lock(frame_deque_mutex);
-                    if (!frame_deque.empty() && frame_deque.front().timestamp == oldest_frame.timestamp) {
-                        frame_deque.pop_front();
-                        
-                        // 输出调试信息
-                        std::lock_guard<std::mutex> cout_lock(cout_mutex);
-                        std::cout << "丢弃过时帧: 时间戳=" << oldest_frame.timestamp << std::endl;
+                    boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
+                    if (!frame_queue.empty() && frame_queue.front().timestamp == oldest_frame.timestamp) {
+                        frame_queue.pop_front();
                     }
                 }
                 // 如果最老的陀螺仪数据比最老的帧时间戳早超过10ms，则无法匹配
                 else if (oldest_gyro.timestamp + 10 < oldest_frame.timestamp - TIME_MATCH_MAX_MS) {
                     // 最老的陀螺仪数据已经太老，无法与任何帧匹配
-                    std::lock_guard<std::mutex> lock(gyro_deque_mutex);
-                    if (!gyro_deque.empty() && gyro_deque.front().timestamp == oldest_gyro.timestamp) {
-                        gyro_deque.pop_front();
-                        
-                        // 输出调试信息
-                        std::lock_guard<std::mutex> cout_lock(cout_mutex);
-                        std::cout << "丢弃过时陀螺仪数据: 时间戳=" << oldest_gyro.timestamp << std::endl;
+                    boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
+                    if (!gyro_queue.empty() && gyro_queue.front().timestamp == oldest_gyro.timestamp) {
+                        gyro_queue.pop_front();
                     }
                 }
             }
@@ -573,8 +446,57 @@ void data_matching_thread_func() {
     }
     
     {
-        std::lock_guard<std::mutex> lock(cout_mutex);
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
         std::cout << "数据匹配线程已结束" << std::endl;
+    }
+}
+
+// 结果处理线程 - 新增线程处理异步结果
+void result_processing_thread_func() {
+    while (running) {
+        // 处理队列中的一个结果
+        std::tuple<int64_t, helios::MCUPacket, std::shared_future<FrameData>> result_tuple;
+        bool has_result = false;
+        
+        {
+            boost::lock_guard<boost::mutex> lock(pending_results_mutex);
+            if (!pending_results.empty()) {
+                result_tuple = pending_results.front();  // 复制是安全的，因为使用shared_future
+                pending_results.pop_front();
+                has_result = true;
+            }
+        }
+        
+        if (has_result) {
+            auto& future = std::get<2>(result_tuple);
+            
+            try {
+                // 等待结果完成，但设置超时以避免阻塞
+                std::future_status status = future.wait_for(std::chrono::milliseconds(50));
+                
+                if (status == std::future_status::ready) {
+                    // 处理完成的结果，例如显示或后处理
+                    FrameData result = future.get();
+                    cv::imshow("Raw Casdfsdfsdfmera", result.frame);
+                    if (result.has_valid_results()) {
+                        // 可以在这里对检测结果进行后处理
+                        cv::Mat visual_result = visualize_detection(result.frame, result.objects);
+                        cv::imshow("Detection Result", visual_result);
+                        cv::waitKey(1);
+                    }
+                } else {
+                    // 如果还没准备好，放回队列末尾
+                    boost::lock_guard<boost::mutex> lock(pending_results_mutex);
+                    pending_results.push_back(result_tuple);  // 复制是安全的
+                }
+            } catch (const std::exception& e) {
+                boost::lock_guard<boost::mutex> lock(cout_mutex);
+                std::cerr << "Error processing result: " << e.what() << std::endl;
+            }
+        } else {
+            // 如果队列为空，短暂休眠
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
     }
 }
 
@@ -583,7 +505,7 @@ int main(int argc, char* argv[]) {
     int baud_rate = 92160000;                 
     
     // Add paths for your detector model
-    std::string model_path = "/home/zyi/Downloads/409_9704.onnx"; // Replace with your actual model path
+    std::string model_path = "/home/zyi/Downloads/fast-big1.onnx"; // Replace with your actual model path
     std::string device_name = "GPU";
     
     if (argc > 1) {
@@ -603,56 +525,56 @@ int main(int argc, char* argv[]) {
         std::cerr << "Failed to initialize the detector. Exiting." << std::endl;
         return EXIT_FAILURE;
     }
-    // 创建必要的线程
-    std::thread cam_thread(camera_thread_func);
-    std::thread serial_thread(serial_thread_func, port_name, baud_rate);
-    std::thread matching_thread(data_matching_thread_func);
-    std::thread stats_thread(stats_thread_func);  // 添加统计线程
     
-    // 设置线程亲和性以提高性能（如果系统支持）
-    // 这对于多核系统特别有用
+    // 创建必要的线程
+    boost::thread cam_thread(camera_thread_func);
+    boost::thread serial_thread(serial_thread_func, port_name, baud_rate);
+    boost::thread matching_thread(data_matching_thread_func);
+    boost::thread result_thread(result_processing_thread_func);  // 新增结果处理线程
+    
     // 设置线程亲和性以提高性能
     if (cam_thread.native_handle()) {
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
         CPU_SET(0, &cpuset);
-        CPU_SET(1, &cpuset); // 添加第二个核心
-        CPU_SET(2, &cpuset); // 添加第三个核心
+        CPU_SET(1, &cpuset);
+        CPU_SET(2, &cpuset);
         pthread_setaffinity_np(cam_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
     }
 
     if (serial_thread.native_handle()) {
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
-        CPU_SET(3, &cpuset); // 串口线程单独分配一个核心
+        CPU_SET(3, &cpuset);
         pthread_setaffinity_np(serial_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
     }
 
     if (matching_thread.native_handle()) {
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
-        // 允许匹配线程也使用多个核心
         CPU_SET(0, &cpuset);
         CPU_SET(1, &cpuset);
         pthread_setaffinity_np(matching_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
     }
 
-    if (stats_thread.native_handle()) {
+    if (result_thread.native_handle()) {
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
-        CPU_SET(3, &cpuset); // 统计线程可以和串口线程共享核心
-        pthread_setaffinity_np(stats_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
-}
+        CPU_SET(2, &cpuset);
+        pthread_setaffinity_np(result_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
+    }
     
     // 等待线程结束
     cam_thread.join();
     serial_thread.join();
     matching_thread.join();
-    stats_thread.join();
+    result_thread.join();
+    
     {
-        std::lock_guard<std::mutex> lock(detector_mutex);
+        boost::lock_guard<boost::mutex> lock(detector_mutex);
         global_detector.reset();
     }
+    
     std::cout << "程序已正常退出" << std::endl;
     return 0;
 }

@@ -26,7 +26,7 @@ find_package(TBB REQUIRED)
 
 message(STATUS "Configuring for Unix/Linux platform")
 
-
+find_package(Boost REQUIRED COMPONENTS thread system chrono)
 set(SERIAL_SOURCES
     ${SRC_DIR}/Serial.cpp
     ${SRC_DIR}/CRC.cpp
@@ -50,6 +50,7 @@ target_include_directories(helios_serial PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${gflags_INCLUDE_DIR}
     ${TBB_INCLUDE_DIRS}
+    ${Boost_INCLUDE_DIRS}
 )
 
 
@@ -67,7 +68,8 @@ target_link_libraries(serial_example PRIVATE
     ${OpenCV_LIBS}
     gflags
     pthread
-    TBB::tbb)
+    TBB::tbb
+    ${Boost_LIBRARIES})
 
 include(GNUInstallDirs)
 
