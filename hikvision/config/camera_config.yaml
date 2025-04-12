@@ -17,6 +17,6 @@ BalanceWhiteMode: 0
 BalanceRatio_Red: 1400
 BalanceRatio_Green: 1000
 BalanceRatio_Blue: 2000
-TriggerMode: 0
+TriggerMode: 1
 TriggerSource: 0
 LineSelector: 99
