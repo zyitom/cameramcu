@@ -668,7 +668,7 @@ namespace camera {
             stConvertParam.nHeight = stImageInfo.stFrameInfo.nHeight;
             stConvertParam.pSrcData = stImageInfo.pBufAddr;
             stConvertParam.nSrcDataLen = stImageInfo.stFrameInfo.nFrameLen;
-            stConvertParam.enDstPixelType = PixelType_Gvsp_RGB8_Packed;
+            stConvertParam.enDstPixelType = PixelType_Gvsp_BGR8_Packed;
             stConvertParam.pDstBuffer = m_pBufForSaveImage;
             stConvertParam.nDstBufferSize = camera::g_nPayloadSize * 3;
             stConvertParam.enSrcPixelType = stImageInfo.stFrameInfo.enPixelType;
