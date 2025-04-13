@@ -11,7 +11,7 @@
 #include "hikvision_camera.h"
 #include "ovdetector.hpp"
 #include "optional"
-
+#include "Serial.hpp"
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/lock_guard.hpp>
 #include <boost/thread/condition_variable.hpp>
@@ -19,7 +19,13 @@
 #include <boost/circular_buffer.hpp>
 #include <boost/thread/thread.hpp>
 #include <boost/bind.hpp>
+#include <boost/asio.hpp>
+#include <boost/asio/serial_port.hpp>
+#include <boost/bind.hpp>
+#include <boost/thread.hpp>
 #include <future> 
+#include <fcntl.h>  
+
 // 性能优化的关键参数
 constexpr int MAX_QUEUE_SIZE = 10;         // 减少队列大小以降低内存占用
 constexpr float TIME_MATCH_MIN_MS = 7;     // 时间戳匹配最小值 (ms)
@@ -202,6 +208,9 @@ void camera_thread_func() {
 }
 
 
+
+
+
 void serial_thread_func(const std::string& port_name, int baud_rate) {
     {
         boost::lock_guard<boost::mutex> lock(cout_mutex);
@@ -217,76 +226,217 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
         return;
     }
     
-    serial::Serial serial_port;
-    try {
-        serial_port.setPort(port_name);
-        serial_port.setBaudrate(baud_rate);
-        serial::Timeout timeout = serial::Timeout::simpleTimeout(50); 
-        serial_port.setTimeout(timeout);
-        serial_port.open();
-        
-        if (!serial_port.isOpen()) {
-            boost::lock_guard<boost::mutex> lock(cout_mutex);
-            std::cerr << "Failed to open serial port." << std::endl;
-            running = false;
-            return;
-        }
-    } catch (const std::exception& e) {
-        {
-            boost::lock_guard<boost::mutex> lock(cout_mutex);
-            std::cerr << "Failed to open serial port: " << e.what() << std::endl;
-        }
-        running = false;
-        return;
-    }
-
-    serial_port.flush();
+    // 设置线程优先级
+    pthread_t this_thread = pthread_self();
+    struct sched_param params;
+    params.sched_priority = sched_get_priority_max(SCHED_FIFO);
+    pthread_setschedparam(this_thread, SCHED_FIFO, &params);
     
-    std::vector<uint8_t> buffer(BUFFER_SIZE, 0); // 预分配且初始化为0
+    bool port_open = false;
+    boost::asio::io_service io_service;
+    boost::asio::serial_port serial_port(io_service);
+    std::chrono::time_point<std::chrono::steady_clock> last_reconnect_attempt;
     
-    // 直接进入主处理循环
-    {
-        boost::lock_guard<boost::mutex> lock(cout_mutex);
-        std::cout << "开始读取串口数据" << std::endl;
-    }
+    // 创建数据缓冲区
+    std::vector<uint8_t> receive_buffer;
+    std::vector<uint8_t> temp_buffer(BUFFER_SIZE);
     
-    while (running) {
-        if (serial_port.available()) {
+    // 打开串口的函数
+    auto open_serial = [&]() -> bool {
+        if (serial_port.is_open()) {
             try {
-                
-                size_t available_bytes = static_cast<size_t>(serial_port.available());
-                size_t bytes_to_read = std::min(available_bytes, BUFFER_SIZE);
-                
-                size_t bytes_read = serial_port.read(buffer.data(), bytes_to_read);
-                
-                if (bytes_read >= sizeof(helios::MCUPacket)) {
-                    auto now = std::chrono::high_resolution_clock::now();
-                    // int64_t timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                    //     now.time_since_epoch()).count();
-                    // int64_t unix_timestamp_ms = timestamp_ns / 1000000; // 转换为毫秒
+                serial_port.close();
+            } catch (...) {
+                // 忽略关闭错误
+            }
+        }
+        
+        boost::system::error_code ec;
+        serial_port.open(port_name, ec);
+        
+        if (ec) {
+            return false;
+        }
+        
+        // 配置串口参数
+        serial_port.set_option(boost::asio::serial_port_base::baud_rate(baud_rate), ec);
+        serial_port.set_option(boost::asio::serial_port_base::character_size(8), ec);
+        serial_port.set_option(boost::asio::serial_port_base::parity(boost::asio::serial_port_base::parity::none), ec);
+        serial_port.set_option(boost::asio::serial_port_base::stop_bits(boost::asio::serial_port_base::stop_bits::one), ec);
+        serial_port.set_option(boost::asio::serial_port_base::flow_control(boost::asio::serial_port_base::flow_control::none), ec);
+        
+        // 使用POSIX API设置非阻塞模式
+        try {
+            int fd = serial_port.native_handle();
+            int flags = fcntl(fd, F_GETFL, 0);
+            if (flags != -1) {
+                fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+            }
+        } catch (...) {
+            // 忽略设置非阻塞模式的错误
+        }
+        
+        return true;
+    };
+    
+    // 首次尝试打开串口
+    port_open = open_serial();
+    if (port_open) {
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
+        std::cout << "串口打开成功，开始读取数据" << std::endl;
+    } else {
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
+        std::cout << "串口打开失败，将在运行中尝试重连" << std::endl;
+    }
+    
+    last_reconnect_attempt = std::chrono::steady_clock::now();
+    
+    // 主循环
+    while (running) {
+        // 检查是否需要重新连接
+        if (!port_open) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_reconnect_attempt).count();
+            
+            if (elapsed >= 1) { // 每秒尝试重连一次
+                port_open = open_serial();
+                if (port_open) {
+                    boost::lock_guard<boost::mutex> lock(cout_mutex);
+                    std::cout << "串口重连成功" << std::endl;
+                }
+                last_reconnect_attempt = now;
+            }
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            continue;
+        }
+        
+        // 尝试读取数据
+        boost::system::error_code error;
+        size_t bytes_read = 0;
+        
+        try {
+            io_service.reset();
+            io_service.poll();
+            
+            bytes_read = serial_port.read_some(boost::asio::buffer(temp_buffer), error);
+            
+            if (error) {
+                if (error != boost::asio::error::would_block) {
+                    // 只在首次错误或错误类型变化时输出
+                    static boost::system::error_code last_error;
+                    if (last_error != error) {
+                        boost::lock_guard<boost::mutex> lock(cout_mutex);
+                        std::cout << "串口读取错误: " << error.message() << std::endl;
+                        last_error = error;
+                    }
                     
-                    helios::MCUPacket packet;
-                    memcpy(&packet, buffer.data(), sizeof(helios::MCUPacket));
-                    
-                    // 快速路径：如果队列为空，直接添加
-                    if (gyro_queue.empty() && !new_gyro_available.load(std::memory_order_relaxed)) {
-                        boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
-                        gyro_queue.push_back(TimestampedPacket(packet, now));   
-                        new_gyro_available.store(true, std::memory_order_release);
-                    } else {
-                        boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
-                        gyro_queue.push_back(TimestampedPacket(packet, now));
-                        new_gyro_available.store(true, std::memory_order_release);
+                    // 遇到严重错误，认为端口已关闭
+                    if (error == boost::asio::error::operation_aborted ||
+                        error == boost::asio::error::connection_reset ||
+                        error == boost::asio::error::eof ||
+                        error == boost::asio::error::broken_pipe) {
+                        port_open = false;
+                        continue;
                     }
                 }
-            } catch (const std::exception& e) {
-                boost::lock_guard<boost::mutex> lock(cout_mutex);
-                std::cerr << "Error reading from serial port: " << e.what() << std::endl;
+            } else {
+                // 成功读取，重置错误计数
+                static boost::system::error_code last_error;
+                last_error = boost::system::error_code();
             }
-        } 
-    }
+            
+            if (bytes_read > 0) {
+                // 将读取的数据添加到接收缓冲区
+                size_t original_size = receive_buffer.size();
+                receive_buffer.resize(original_size + bytes_read);
+                std::copy(temp_buffer.begin(), temp_buffer.begin() + bytes_read, receive_buffer.begin() + original_size);
+                
+                // 处理缓冲区中的所有完整数据包
+                while (receive_buffer.size() >= sizeof(helios::FrameHeader)) {
+                    // 查找SOF
+                    auto sof_it = std::find(receive_buffer.begin(), receive_buffer.end(), 0xA5);
+                    if (sof_it == receive_buffer.end()) {
+                        // 没有SOF，清空缓冲区
+                        receive_buffer.clear();
+                        break;
+                    }
+                    
+                    // 如果SOF不在开头，删除SOF之前的数据
+                    if (sof_it != receive_buffer.begin()) {
+                        receive_buffer.erase(receive_buffer.begin(), sof_it);
+                    }
+                    
+                    // 如果缓冲区不足以容纳一个完整的帧头，等待更多数据
+                    if (receive_buffer.size() < sizeof(helios::FrameHeader)) {
+                        break;
+                    }
+                    
+                    // 解析帧头
+                    helios::FrameHeader header;
+                    memcpy(&header, receive_buffer.data(), sizeof(helios::FrameHeader));
+                    
+                    // 简单验证，确保数据长度在合理范围内
+                    if (header.data_length > 1024 || header.data_length < sizeof(helios::MCUPacket)) {
+                        // 非法长度，删除SOF，继续查找下一个SOF
+                        receive_buffer.erase(receive_buffer.begin());
+                        continue;
+                    }
+                    
+                    // 检查是否有完整的数据包(仅包含帧头和数据，忽略CRC16)
+                    size_t total_packet_size = sizeof(helios::FrameHeader) + header.data_length;
+                    if (receive_buffer.size() < total_packet_size) {
+                        // 数据不完整，等待更多数据
+                        break;
+                    }
+                    
 
-    serial_port.close();
+                    auto now = std::chrono::high_resolution_clock::now();
+                    
+                    if (header.cmd_id == helios::RECEIVE_AUTOAIM_RECEIVE_CMD_ID && 
+                        header.data_length == sizeof(helios::MCUPacket)) {
+                        
+                        helios::MCUPacket packet;
+                        memcpy(&packet, receive_buffer.data() + sizeof(helios::FrameHeader), sizeof(helios::MCUPacket));
+                        {
+                            boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
+                            gyro_queue.push_back(TimestampedPacket(packet, now));
+                            new_gyro_available.store(true, std::memory_order_release);
+                        }
+                    }
+                    
+                    // 删除已处理的数据包
+                    receive_buffer.erase(receive_buffer.begin(), receive_buffer.begin() + total_packet_size);
+                }
+            }
+        } catch (const std::exception& e) {
+            // 仅记录重要异常
+            static std::string last_exception;
+            if (last_exception != e.what()) {
+                boost::lock_guard<boost::mutex> lock(cout_mutex);
+                std::cerr << "串口处理异常: " << e.what() << std::endl;
+                last_exception = e.what();
+            }
+            
+            port_open = false;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        // 短暂休眠以减少CPU使用
+        if (bytes_read == 0) {
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+    }
+    
+    // 关闭串口
+    if (serial_port.is_open()) {
+        try {
+            boost::system::error_code close_ec;
+            serial_port.close(close_ec);
+        } catch (...) {
+            // 忽略关闭错误
+        }
+    }
     
     {
         boost::lock_guard<boost::mutex> lock(cout_mutex);
@@ -461,7 +611,7 @@ void result_processing_thread_func() {
 
 int main(int argc, char* argv[]) {
     std::string port_name = "/dev/ttyACM0";  
-    int baud_rate = 92160000;                 
+    int baud_rate = 921600;                 
     
     // Add paths for your detector model
     std::string model_path = "/home/zyi/Downloads/fast-big1.onnx"; // Replace with your actual model path
