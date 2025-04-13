@@ -23,7 +23,7 @@
 
 #include "Armor.hpp"
 
-namespace helios_cv {
+
 
 // Constants
 constexpr double small_armor_width = 135.0;
@@ -217,4 +217,3 @@ private:
     Logger logger_{"EnergyProjectRoll"};
 };
 
-} // namespace helios_cv

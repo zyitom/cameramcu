@@ -10,8 +10,7 @@
 #include <algorithm>
 #include <string>
 
-namespace helios_cv
-{
+
 const int RED = 0;
 const int BLUE = 1;
 
@@ -110,6 +109,5 @@ struct Armors
   virtual ~Armors() = default;
 };
 
-}  // namespace helios_cv
 
 #endif  // ARMOR_DETECTOR__ARMOR_HPP_

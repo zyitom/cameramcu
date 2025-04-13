@@ -10,6 +10,7 @@
 #include <numeric>
 #include <mutex>
 #include <opencv2/opencv.hpp>
+#include "Armor.hpp"
 #include "openvino/openvino.hpp"
 #include <future>
 
@@ -18,7 +19,7 @@ constexpr int NUM_CLASS = 7;
 constexpr int NUM_COLORS = 2;    
 constexpr float CLASSIFIER_THRESHOLD = 0.65f;  
 constexpr float NMS_THRESH = 0.45f;  
-
+const std::vector<std::string> ARMOR_NUMBER_LABEL{ "guard", "1", "2", "3", "4", "5", "outpost", "base", "base" };
 
 struct GridAndStride
 {
@@ -35,6 +36,31 @@ struct Object
     int label;
     int color;
     float conf;
+};
+
+struct FrameData {
+    std::chrono::system_clock::time_point timestamp;
+    cv::Mat frame;                       // 输入图像
+    std::vector<Armor> armors;         // 检测结果
+    bool processed = false;              // 是否已处理完成
+    
+    // 构造函数：创建带图像的输入数据
+    FrameData(const std::chrono::system_clock::time_point& ts, const cv::Mat& img)
+        : timestamp(ts), frame(img) {}
+        
+    // 默认构造函数
+    FrameData() = default;
+    
+    // 添加检测结果
+    void add_armor_results(const std::vector<Armor>& armors) {
+        this->armors = armors;
+        processed = true;
+        
+    }
+    
+    bool has_valid_results() const {
+        return processed && !armors.empty();  
+    }
 };
 
 ov::Tensor preprocess_frame(const cv::Mat& input_frame, const ov::Shape& input_shape)
@@ -57,7 +83,7 @@ public:
     }
     
  
-    std::vector<Object> process(const ov::Tensor& output_tensor)
+    std::vector<Armor> process(const ov::Tensor& output_tensor)
     {
         const float* output_buffer = output_tensor.data<const float>();
         std::vector<Object> objects;
@@ -71,13 +97,34 @@ public:
         result.reserve(picked.size());
         for (int i : picked)
         {
-            nms_sorted_bboxes(objects, picked);
-    
             result.push_back(objects[i]);
         }
 
         avg_rect(result);
-        return result;
+        std::vector<Armor> armors; 
+        
+        for (const auto& object : result) 
+        {
+            // TODO:dingzhi
+            if (object.color == 0) {
+                continue;
+            }
+            
+            Armor armor_target;
+            armor_target.confidence = object.conf;
+            
+            armor_target.number = ARMOR_NUMBER_LABEL[object.label];
+            armor_target.left_light.bottom = object.apexes[1];
+            armor_target.left_light.top = object.apexes[0];
+            armor_target.right_light.top = object.apexes[3];
+            armor_target.right_light.bottom = object.apexes[2];
+            armor_target.center = (object.apexes[0] + object.apexes[1] + object.apexes[2] + object.apexes[3]) * 0.25f;
+            armor_target.type = judge_armor_type(armor_target);
+            
+            armors.push_back(armor_target);
+        }
+        
+        return armors; 
     }
 
 private:
@@ -229,81 +276,24 @@ private:
             }
         }
     }
-};
+    ArmorType judge_armor_type(const Armor& armor)
+    {
+    cv::Point2f light_center1 = (armor.left_light.top + armor.left_light.bottom) / 2.0;
+    cv::Point2f light_center2 = (armor.right_light.top + armor.right_light.bottom) / 2.0;
+    float light_length1 = cv::norm(armor.left_light.top - armor.left_light.bottom);
+    float light_length2 = cv::norm(armor.right_light.top - armor.right_light.bottom);
 
-// 在图像上绘制检测结果
-cv::Mat visualize_detection(const cv::Mat& frame, const std::vector<Object>& objects) 
-{
-    static const std::vector<cv::Scalar> colors = {
-        cv::Scalar(255, 0, 0),     // 蓝色
-        cv::Scalar(0, 255, 0),     // 绿色
-        cv::Scalar(0, 0, 255),     // 红色
-        cv::Scalar(255, 255, 0),   // 青色
-        cv::Scalar(255, 0, 255),   // 品红
-        cv::Scalar(0, 255, 255),   // 黄色
-        cv::Scalar(128, 128, 128), // 灰色
-        cv::Scalar(255, 255, 255)  // 白色
-    };
-    
-    cv::Mat vis = frame;
-    
-    for (const auto& obj : objects) {
-        // 绘制多边形
-        std::vector<cv::Point> pts;
-        for (const auto& p : obj.apexes) {
-            pts.emplace_back(static_cast<int>(p.x), static_cast<int>(p.y));
-        }
-        
-        // 根据标签选择颜色
-        cv::Scalar color = colors[obj.label % colors.size()];
-        
-        // 绘制多边形
-        cv::polylines(vis, pts, true, color, 2);
-        
-        // 绘制边界框
-        cv::rectangle(vis, obj.rect, color, 1);
-        
-        // 添加标签和置信度
-        char text[64];
-        sprintf(text, "id:%d %.1f%%", obj.label, obj.conf * 100);
-        
-        int baseline = 0;
-        cv::Size text_size = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseline);
-        cv::rectangle(vis, 
-                   cv::Point(obj.rect.x, obj.rect.y - text_size.height - 5),
-                   cv::Point(obj.rect.x + text_size.width, obj.rect.y),
-                   color, -1);
-        cv::putText(vis, text, cv::Point(obj.rect.x, obj.rect.y - 5),
-                  cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
-    }
-    
-    return vis;
-}
-
-
-struct FrameData {
-    std::chrono::system_clock::time_point timestamp;
-    cv::Mat frame;                       // 输入图像
-    std::vector<Object> objects;         // 检测结果
-    bool processed = false;              // 是否已处理完成
-    
-    // 构造函数：创建带图像的输入数据
-    FrameData(const std::chrono::system_clock::time_point& ts, const cv::Mat& img)
-        : timestamp(ts), frame(img) {}
-        
-    // 默认构造函数
-    FrameData() = default;
-    
-    // 添加检测结果
-    void add_detection_results(const std::vector<Object>& objs) {
-        objects = objs;
-        processed = true;
-    }
-    
-    bool has_valid_results() const {
-        return processed && !objects.empty();
+    float avg_light_length = (light_length1 + light_length2) / 2.0;
+    float center_distance = cv::norm(light_center1 - light_center2) / avg_light_length;
+        //TODO:这里用的是定制
+    return center_distance > 3.6 ? ArmorType::LARGE : ArmorType::SMALL;
     }
 };
+
+
+
+
+
 
 class YOLOXDetector {
 public:
@@ -355,7 +345,6 @@ public:
             model_height_ = input_shape_[1];  
             model_width_ = input_shape_[2];
             
-            // 初始化YOLOX处理器
             yolox_processor_.init(model_width_, model_height_);
             
             uint32_t nireq = compiled_model_.get_property(ov::optimal_number_of_infer_requests);
@@ -423,10 +412,10 @@ public:
                             
                                
                                 ov::Tensor output_tensor = ireq_ptr->get_output_tensor();
-                                std::vector<Object> detected_objects = this->yolox_processor_.process(output_tensor);
+                                std::vector<Armor> detected_objects = this->yolox_processor_.process(output_tensor);
                                 
                                 FrameData result = input_data;
-                                result.add_detection_results(detected_objects);
+                                result.add_armor_results(detected_objects);
                                 
                                 // 设置结果
                                 promise_ptr->set_value(result);
@@ -474,8 +463,56 @@ public:
         return ov::Tensor(ov::element::u8, input_shape, resized_frame.data);
     }
     
+
+
+    cv::Mat visualize_detection_result(const FrameData& frame_data) {
+        if (!frame_data.processed || frame_data.frame.empty() || frame_data.armors.empty()) {
+            return frame_data.frame.clone();  
+        }
+        
+        cv::Mat vis = frame_data.frame.clone();
+        
+        float scale_x = static_cast<float>(frame_data.frame.cols) / model_width_;
+        float scale_y = static_cast<float>(frame_data.frame.rows) / model_height_;
+        
+        for (const auto& armor : frame_data.armors) {
+            std::vector<cv::Point> pts = {
+                cv::Point(armor.left_light.top.x * scale_x, armor.left_light.top.y * scale_y),
+                cv::Point(armor.right_light.top.x * scale_x, armor.right_light.top.y * scale_y),
+                cv::Point(armor.right_light.bottom.x * scale_x, armor.right_light.bottom.y * scale_y),
+                cv::Point(armor.left_light.bottom.x * scale_x, armor.left_light.bottom.y * scale_y)
+            };
+            
+            cv::Scalar color;
+            if (armor.type == ArmorType::SMALL) {
+                color = cv::Scalar(0, 255, 0); 
+            } else {
+                color = cv::Scalar(0, 0, 255); 
+            }
+            
+            cv::polylines(vis, pts, true, color, 2);
+            
+            cv::Point center(armor.center.x * scale_x, armor.center.y * scale_y);
+            
+            cv::circle(vis, center, 3, cv::Scalar(255, 0, 0), -1);
+            char text[64];
+            sprintf(text, "%s %.1f%%", armor.number.c_str(), armor.confidence * 100);
+            
+            int baseline = 0;
+            cv::Size text_size = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &baseline);
+            cv::Point text_pos(center.x - text_size.width/2, center.y - 10);
+            
+            cv::rectangle(vis, 
+                        cv::Point(text_pos.x, text_pos.y - text_size.height),
+                        cv::Point(text_pos.x + text_size.width, text_pos.y + baseline),
+                        color, -1);
+            cv::putText(vis, text, text_pos, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
+        }
+        
+        return vis;
+    }
 private:
-    // 表示带时间戳的推理请求
+    // 单次的推理请求
     struct TimedIreq {
         ov::InferRequest* ireq;      // 指针代替引用
         FrameData frame_data;        // 关联的带时间戳的帧和结果

@@ -353,10 +353,10 @@ void data_matching_thread_func() {
         if (found_match) {
             successful_matches++;
 
-            {
-                boost::lock_guard<boost::mutex> lock(cout_mutex);
-                std::cout << "找到匹配: 时间差 = " << best_time_diff << "ms" << std::endl;
-            }
+            // {
+            //     boost::lock_guard<boost::mutex> lock(cout_mutex);
+            //     std::cout << "找到匹配: 时间差 = " << best_time_diff << "ms" << std::endl;
+            // }
 
             process_matched_pair(matched_frame.frame, matched_gyro.packet, matched_gyro.timestamp);
 
@@ -439,15 +439,14 @@ void result_processing_thread_func() {
                     FrameData result = future.get();
                     cv::imshow("Raw Casdfsdfsdfmera", result.frame);
                     if (result.has_valid_results()) {
-                        // 可以在这里对检测结果进行后处理
-                        cv::Mat visual_result = visualize_detection(result.frame, result.objects);
+                        cv::Mat visual_result = global_detector->visualize_detection_result(result);
                         cv::imshow("Detection Result", visual_result);
                         cv::waitKey(1);
                     }
                 } else {
                     // 如果还没准备好，放回队列末尾
                     boost::lock_guard<boost::mutex> lock(pending_results_mutex);
-                    pending_results.push_back(result_tuple);  // 复制是安全的
+                    pending_results.push_back(result_tuple); 
                 }
             } catch (const std::exception& e) {
                 boost::lock_guard<boost::mutex> lock(cout_mutex);

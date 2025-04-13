@@ -5,7 +5,7 @@
 // Submodule of HeliosRobotSystem
 #include "PnPSolver.hpp"
 
-namespace helios_cv {
+
 
 PnPSolver::PnPSolver(
     const std::array<double, 9>& camera_matrix,
@@ -550,4 +550,3 @@ bool EnergyProjectRoll::use_projection() {
     return use_projection_;
 }
 
-} // namespace helios_cv
