@@ -75,37 +75,38 @@ private:
     
 
     void updateTransforms() {
-        // 云台旋转
+        Eigen::Quaterniond gimbal_to_world;
+        
+        // ROS是Z轴向上，X轴向前，Y轴向左
         Eigen::AngleAxisd yaw_rotation(current_yaw_, Eigen::Vector3d::UnitZ());
         Eigen::AngleAxisd pitch_rotation(current_pitch_, Eigen::Vector3d::UnitY());
         Eigen::AngleAxisd roll_rotation(current_roll_, Eigen::Vector3d::UnitX());
         
-        // 相机相对于pitch_link的固定变换 (从URDF获取)
-        // 相机关节的旋转 - rpy参数
-        Eigen::AngleAxisd camera_roll(camera_rpy_[0], Eigen::Vector3d::UnitX());
-        Eigen::AngleAxisd camera_pitch(camera_rpy_[1], Eigen::Vector3d::UnitY());
+        // 旋转顺序很重要，通常是YXZ
+        gimbal_to_world = yaw_rotation * pitch_rotation * roll_rotation;
+        
+        // 相机到云台的变换
+        Eigen::Quaterniond camera_to_gimbal;
         Eigen::AngleAxisd camera_yaw(camera_rpy_[2], Eigen::Vector3d::UnitZ());
-        Eigen::Quaterniond camera_rotation = 
-            (camera_yaw * camera_pitch * camera_roll).normalized();
+        Eigen::AngleAxisd camera_pitch(camera_rpy_[1], Eigen::Vector3d::UnitY());
+        Eigen::AngleAxisd camera_roll(camera_rpy_[0], Eigen::Vector3d::UnitX());
+        camera_to_gimbal = camera_yaw * camera_pitch * camera_roll;
         
-        // 光学坐标系的变换 - 从URDF的camera_optical_joint获取
-        // rpy="${-pi/2} 0 ${-pi/2}"
-        Eigen::AngleAxisd optical_x_rotation(-M_PI/2, Eigen::Vector3d::UnitX());
-        Eigen::AngleAxisd optical_z_rotation(-M_PI/2, Eigen::Vector3d::UnitZ());
-        Eigen::Quaterniond optical_rotation = 
-            (optical_z_rotation * optical_x_rotation).normalized();
+
+        Eigen::Quaterniond optical_to_camera;
+        // （X前，Y左，Z上）
+        optical_to_camera = 
+            Eigen::AngleAxisd(-M_PI/2, Eigen::Vector3d::UnitZ()) * 
+            Eigen::AngleAxisd(-M_PI/2, Eigen::Vector3d::UnitX());
         
-        // 旋转顺序: 世界 -> 云台yaw -> 云台pitch -> 相机固定旋转 -> 光学坐标系
-        Eigen::Quaterniond q_world_to_camera = 
-            (optical_rotation * camera_rotation * pitch_rotation * yaw_rotation).normalized();
+        Eigen::Quaterniond world_to_optical = 
+            optical_to_camera.inverse() * camera_to_gimbal.inverse() * gimbal_to_world.inverse();
         
-        // 转换为OpenCV四元数
         odom2cam_rotation_ = cv::Quatd(
-            q_world_to_camera.w(), q_world_to_camera.x(), 
-            q_world_to_camera.y(), q_world_to_camera.z()
+            world_to_optical.w(), world_to_optical.x(), 
+            world_to_optical.y(), world_to_optical.z()
         );
         
-        // 计算逆变换
         cam2odom_rotation_ = odom2cam_rotation_.conjugate();
     }
     

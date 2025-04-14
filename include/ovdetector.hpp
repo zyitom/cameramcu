@@ -80,6 +80,8 @@ public:
         static const int strides[3] = {8, 16, 32}; 
         grid_strides_.clear();
         generate_grids_and_stride(input_width, input_height, strides, grid_strides_);
+        scale_x_ = static_cast<float>(input_width) / 1440;
+        scale_y_ = static_cast<float>(input_height) / 1080;
     }
     
  
@@ -103,15 +105,18 @@ public:
         avg_rect(result);
         std::vector<Armor> armors; 
         
+       
+        
         for (const auto& object : result) 
         {
-            // TODO:dingzhi
+            // TODO
             if (object.color == 0) {
                 continue;
             }
             
             Armor armor_target;
             armor_target.confidence = object.conf;
+            armor_target.number = ARMOR_NUMBER_LABEL[object.label];
             
             armor_target.number = ARMOR_NUMBER_LABEL[object.label];
             armor_target.left_light.bottom = object.apexes[1];
@@ -472,17 +477,18 @@ public:
         
         cv::Mat vis = frame_data.frame.clone();
         
-        float scale_x = static_cast<float>(frame_data.frame.cols) / model_width_;
-        float scale_y = static_cast<float>(frame_data.frame.rows) / model_height_;
+
         
         for (const auto& armor : frame_data.armors) {
-            std::vector<cv::Point> pts = {
-                cv::Point(armor.left_light.top.x * scale_x, armor.left_light.top.y * scale_y),
-                cv::Point(armor.right_light.top.x * scale_x, armor.right_light.top.y * scale_y),
-                cv::Point(armor.right_light.bottom.x * scale_x, armor.right_light.bottom.y * scale_y),
-                cv::Point(armor.left_light.bottom.x * scale_x, armor.left_light.bottom.y * scale_y)
-            };
+        
+            cv::Point left_top(armor.left_light.top.x, armor.left_light.top.y);
+            cv::Point right_top(armor.right_light.top.x, armor.right_light.top.y);
+            cv::Point right_bottom(armor.right_light.bottom.x, armor.right_light.bottom.y);
+            cv::Point left_bottom(armor.left_light.bottom.x, armor.left_light.bottom.y);
             
+            std::vector<cv::Point> pts = {left_top, right_top, right_bottom, left_bottom};
+            
+
             cv::Scalar color;
             if (armor.type == ArmorType::SMALL) {
                 color = cv::Scalar(0, 255, 0); 
@@ -492,9 +498,20 @@ public:
             
             cv::polylines(vis, pts, true, color, 2);
             
-            cv::Point center(armor.center.x * scale_x, armor.center.y * scale_y);
+            cv::putText(vis, "LT", left_top, cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 0), 1);
+            cv::putText(vis, "RT", right_top, cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 0), 1);
+            cv::putText(vis, "RB", right_bottom, cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 0), 1);
+            cv::putText(vis, "LB", left_bottom, cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 0), 1);
             
-            cv::circle(vis, center, 3, cv::Scalar(255, 0, 0), -1);
+
+            cv::circle(vis, left_top, 4, cv::Scalar(255, 0, 0), -1);      // 左上 - 蓝色
+            cv::circle(vis, right_top, 4, cv::Scalar(0, 255, 255), -1);   // 右上 - 黄色
+            cv::circle(vis, right_bottom, 4, cv::Scalar(255, 0, 255), -1); // 右下 - 紫色
+            cv::circle(vis, left_bottom, 4, cv::Scalar(0, 165, 255), -1); // 左下 - 橙色
+            
+            cv::Point center(armor.center.x, armor.center.y);
+            cv::circle(vis, center, 3, cv::Scalar(0, 255, 0), -1);
+            
             char text[64];
             sprintf(text, "%s %.1f%%", armor.number.c_str(), armor.confidence * 100);
             
@@ -509,6 +526,7 @@ public:
             cv::putText(vis, text, text_pos, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
         }
         
+        cv::imshow("Detection Points Check", vis);
         return vis;
     }
 private:

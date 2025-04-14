@@ -44,7 +44,7 @@ namespace camera
         ~HikCamera();
 
         //*********** 相机初始化 ******************/
-        void Init(bool debug_flag, const std::string &config_path, const std::string &intrinsic_para_file_path, bool use_mfs = false);
+        void Init(bool debug_flag, const std::string &config_path, bool use_mfs = false);
         //********** 相机工作线程 ******************/
         static void *HKWorkThread(void *arg);
         //********** 输出设备信息 ******************/

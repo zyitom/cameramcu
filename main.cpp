@@ -25,7 +25,14 @@
 #include <boost/thread.hpp>
 #include <future> 
 #include <fcntl.h>  
-
+#include "PnPSolver.hpp"
+#include "transform.hpp"
+#include <yaml-cpp/yaml.h>
+#include <iostream>
+#include <vector>
+#include <array>
+#include <string>
+#include <fstream>
 // 性能优化的关键参数
 constexpr int MAX_QUEUE_SIZE = 10;         // 减少队列大小以降低内存占用
 constexpr float TIME_MATCH_MIN_MS = 7;     // 时间戳匹配最小值 (ms)
@@ -47,7 +54,9 @@ std::atomic<bool> new_gyro_available(false);
 
 // 数据结构优化：使用内存对齐且尽量避免虚拟函数以减少缓存未命中
 // 使用struct而非class，避免不必要的封装开销
-
+std::unique_ptr<ArmorProjectYaw> armor_pnp_solver;
+std::unique_ptr<EnergyProjectRoll> energy_pnp_solver;
+boost::mutex pnp_mutex;
 // 将int64_t时间戳(毫秒)转换为time_point
 inline std::chrono::high_resolution_clock::time_point int64ToTimePoint(int64_t timestamp_ms) {
     return std::chrono::high_resolution_clock::time_point(
@@ -100,6 +109,26 @@ bool initialize_detector(const std::string& model_path, const std::string& devic
     }
 }
 
+bool initialize_pnp_solvers(const std::array<double, 9>& camera_matrix, const std::vector<double>& dist_coeffs) {
+    try {
+        boost::lock_guard<boost::mutex> lock(pnp_mutex);
+        
+
+        armor_pnp_solver = std::make_unique<ArmorProjectYaw>(camera_matrix, dist_coeffs);
+        armor_pnp_solver->set_use_projection(true); // 使用投影优化
+        
+        // 初始化能量机关PnP解算器
+        energy_pnp_solver = std::make_unique<EnergyProjectRoll>(camera_matrix, dist_coeffs);
+        energy_pnp_solver->set_use_projection(true); // 使用投影优化
+        
+        return true;
+    } catch (const std::exception& e) {
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
+        std::cerr << "Failed to initialize PnP solvers: " << e.what() << std::endl;
+        return false;
+    }
+}
+
 constexpr int MAX_PENDING_RESULTS = 5; // 限制挂起的结果数量
 boost::mutex pending_results_mutex;
 
@@ -123,7 +152,6 @@ void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_da
         }
     }
     
-    // 添加到结果处理队列
     {
         boost::lock_guard<boost::mutex> lock(pending_results_mutex);
         pending_results.emplace_back(timestamp, gyro_data, shared_future);
@@ -145,10 +173,10 @@ void camera_thread_func() {
     camera::HikCamera hikCam;
     auto time_start = std::chrono::high_resolution_clock::now();
     std::string camera_config_path = HIK_CONFIG_FILE_PATH"/camera_config.yaml";
-    std::string intrinsic_para_path = HIK_CALI_FILE_PATH"/caliResults/calibCameraData.yml";
+    // std::string intrinsic_para_path = HIK_CALI_FILE_PATH"/caliResults/calibCameraData.yml";
     
     try {
-        hikCam.Init(true, camera_config_path, intrinsic_para_path, false);
+        hikCam.Init(true, camera_config_path, false);
     } catch (const std::exception& e) {
         boost::lock_guard<boost::mutex> lock(cout_mutex);
         std::cerr << "相机初始化失败: " << e.what() << std::endl;
@@ -192,12 +220,9 @@ void camera_thread_func() {
                 new_frame_available.store(true, std::memory_order_release);
             }
             
-            cv::imshow("Raw Camera", frame);
-            int key = cv::waitKey(1);
-            if (key == 27) { 
-                running = false;
-                break;
-            }
+            // cv::imshow("Raw Camera", frame);
+            // cv::waitKey(1);
+            
         }
     }
     
@@ -561,8 +586,12 @@ void data_matching_thread_func() {
         std::cout << "数据匹配线程已结束" << std::endl;
     }
 }
-// 结果处理线程 - 新增线程处理异步结果
+
+
 void result_processing_thread_func() {
+
+    auto& transform_manager = helios_cv::TransformManager::getInstance();
+    
     while (running) {
         // 处理队列中的一个结果
         std::tuple<std::chrono::high_resolution_clock::time_point, helios::MCUPacket, std::shared_future<FrameData>> result_tuple;
@@ -571,13 +600,15 @@ void result_processing_thread_func() {
         {
             boost::lock_guard<boost::mutex> lock(pending_results_mutex);
             if (!pending_results.empty()) {
-                result_tuple = pending_results.front();  // 复制是安全的，因为使用shared_future
+                result_tuple = pending_results.front();
                 pending_results.pop_front();
                 has_result = true;
             }
         }
         
         if (has_result) {
+            auto& timestamp = std::get<0>(result_tuple);
+            auto& gyro_data = std::get<1>(result_tuple);
             auto& future = std::get<2>(result_tuple);
             
             try {
@@ -585,18 +616,89 @@ void result_processing_thread_func() {
                 std::future_status status = future.wait_for(std::chrono::milliseconds(50));
                 
                 if (status == std::future_status::ready) {
-                    // 处理完成的结果，例如显示或后处理
+                    // 获取检测结果
                     FrameData result = future.get();
-                    cv::imshow("Raw Casdfsdfsdfmera", result.frame);
+                    global_detector->visualize_detection_result(result);
                     if (result.has_valid_results()) {
-                        cv::Mat visual_result = global_detector->visualize_detection_result(result);
-                        cv::imshow("Detection Result", visual_result);
-                        cv::waitKey(1);
+                        transform_manager.updateGimbalAngles(
+                            gyro_data.yaw,  
+                            gyro_data.pitch, 
+                            gyro_data.roll
+                        );
+                        
+                        // 然后创建变换信息
+                        auto transform_info = helios_cv::createArmorTransformInfo();
+                        
+                        // 处理每个检测到的装甲板
+                        for (const auto& armor : result.armors) {
+                            // 根据装甲板类型选择合适的PnP解算器
+                            cv::Mat rvec, tvec; // 旋转向量和平移向量
+                            bool pose_solved = false;
+                            
+                            {
+                                boost::lock_guard<boost::mutex> lock(pnp_mutex);
+                                
+                                if (armor.type == ArmorType::ENERGY_TARGET || armor.type == ArmorType::ENERGY_FAN) {
+                                    // 使用能量机关PnP解算器
+                                    if (energy_pnp_solver) {
+                                        // 更新变换信息
+                                        auto transform_info = helios_cv::createEnergyTransformInfo();
+                                        energy_pnp_solver->update_transform_info(transform_info.get());
+                                        
+                                        // 解算姿态
+                                        pose_solved = energy_pnp_solver->solve_pose(armor, rvec, tvec);
+                                        
+                                        // 可视化投影点 (如果需要)
+                                        if (pose_solved) {
+                                            energy_pnp_solver->draw_projection_points(result.frame);
+                                        }
+                                    }
+                                } else {
+                                    // 使用装甲板PnP解算器
+                                    if (armor_pnp_solver) {
+                                        // 更新变换信息
+                                        
+                                        armor_pnp_solver->update_transform_info(transform_info.get());
+                                        
+                                        // 解算姿态
+                                        pose_solved = armor_pnp_solver->solve_pose(armor, rvec, tvec);
+                                    
+
+                                        if (pose_solved) {
+                                            armor_pnp_solver->draw_projection_points(result.frame);
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (pose_solved) {
+                                // 计算距离 (单位：米)
+                                double distance = cv::norm(tvec);
+                                
+                                // 计算装甲板在世界坐标系中的位置
+                                cv::Mat rotation_matrix;
+                                cv::Rodrigues(rvec, rotation_matrix);
+                                
+                                // 在图像上显示姿态信息
+                                std::string pose_text = "Dist: " + std::to_string(distance).substr(0, 4) + "m";
+                                cv::putText(result.frame, pose_text, armor.center, 
+                                          cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
+                                
+                                // 输出姿态信息
+                                boost::lock_guard<boost::mutex> lock(cout_mutex);
+                                
+                                // 这里可以添加额外的处理，比如发送位置信息给控制系统
+                            }
+                        }
+                        
+                        // 显示处理后的图像
+                        // cv::imshow("Detection and Pose Estimation", result.frame);
+                        // cv::waitKey(1);
                     }
                 } else {
                     // 如果还没准备好，放回队列末尾
                     boost::lock_guard<boost::mutex> lock(pending_results_mutex);
-                    pending_results.push_back(result_tuple); 
+                    pending_results.push_back(result_tuple);
                 }
             } catch (const std::exception& e) {
                 boost::lock_guard<boost::mutex> lock(cout_mutex);
@@ -608,14 +710,66 @@ void result_processing_thread_func() {
         }
     }
 }
+bool load_camera_parameters_yaml(const std::string& yaml_file, 
+                               std::array<double, 9>& camera_matrix,
+                               std::vector<double>& dist_coeffs) {
+    try {
+        // 检查文件是否存在
+        std::ifstream file(yaml_file);
+        if (!file.good()) {
+            std::cerr << "Failed to open camera calibration file: " << yaml_file << std::endl;
+            return false;
+        }
+        file.close();
+
+        YAML::Node config = YAML::LoadFile(yaml_file);
+
+        if (!config["camera_matrix"] || !config["camera_matrix"]["data"] || 
+            !config["distortion_coefficients"] || !config["distortion_coefficients"]["data"]) {
+            std::cerr << "Missing required nodes in camera calibration file" << std::endl;
+            return false;
+        }
+
+        auto cm_node = config["camera_matrix"]["data"];
+        if (!cm_node.IsSequence() || cm_node.size() != 9) {
+            std::cerr << "Invalid camera_matrix data format or size" << std::endl;
+            return false;
+        }
+
+        for (int i = 0; i < 9; i++) {
+            camera_matrix[i] = cm_node[i].as<double>();
+        }
+
+        auto dist_node = config["distortion_coefficients"]["data"];
+        if (!dist_node.IsSequence() || dist_node.size() == 0) {
+            std::cerr << "Invalid distortion_coefficients data format or empty" << std::endl;
+            return false;
+        }
+
+        dist_coeffs.resize(dist_node.size());
+        for (size_t i = 0; i < dist_node.size(); i++) {
+            dist_coeffs[i] = dist_node[i].as<double>();
+        }
+
+        return true;
+
+    } catch (const YAML::Exception& e) {
+        std::cerr << "YAML parsing error when loading camera parameters: " << e.what() << std::endl;
+        return false;
+    } catch (const std::exception& e) {
+        std::cerr << "Error when loading camera parameters: " << e.what() << std::endl;
+        return false;
+    }
+}
 
 int main(int argc, char* argv[]) {
     std::string port_name = "/dev/ttyACM0";  
-    int baud_rate = 921600;                 
+    int baud_rate = 92160000;                 
     
-    // Add paths for your detector model
-    std::string model_path = "/home/zyi/Downloads/fast-big1.onnx"; // Replace with your actual model path
+    // 模型和标定文件路径
+    std::string model_path = "/home/zyi/Downloads/0405_9744.onnx"; 
     std::string device_name = "GPU";
+    std::string calibration_file = "/home/zyi/cs016_8mm.yaml";
     
     if (argc > 1) {
         port_name = argv[1];
@@ -629,17 +783,40 @@ int main(int argc, char* argv[]) {
         model_path = argv[3];
     }
     
-
+    if (argc > 4) {
+        calibration_file = argv[4];
+    }
+    
+    // 加载相机参数
+    std::array<double, 9> camera_matrix;
+    std::vector<double> dist_coeffs;
+    
+    if (!load_camera_parameters_yaml(calibration_file, camera_matrix, dist_coeffs)) {
+            std::cerr << "Failed to load camera parameters. Exiting." << std::endl;
+            return EXIT_FAILURE;
+        }
+    // 初始化检测器
     if (!initialize_detector(model_path, device_name)) {
         std::cerr << "Failed to initialize the detector. Exiting." << std::endl;
         return EXIT_FAILURE;
     }
     
+    // 初始化PnP解算器
+    if (!initialize_pnp_solvers(camera_matrix, dist_coeffs)) {
+        std::cerr << "Failed to initialize PnP solvers. Exiting." << std::endl;
+        return EXIT_FAILURE;
+    }
+    
+    // 初始化坐标变换管理器
+    auto& transform_manager = helios_cv::TransformManager::getInstance();
+    // 可以设置相机的安装参数，如果需要的话
+    transform_manager.setCameraParams();
+    
     // 创建必要的线程
     boost::thread cam_thread(camera_thread_func);
     boost::thread serial_thread(serial_thread_func, port_name, baud_rate);
     boost::thread matching_thread(data_matching_thread_func);
-    boost::thread result_thread(result_processing_thread_func);  // 新增结果处理线程
+    boost::thread result_thread(result_processing_thread_func);  
     
     // 设置线程亲和性以提高性能
     if (cam_thread.native_handle()) {
@@ -678,9 +855,16 @@ int main(int argc, char* argv[]) {
     matching_thread.join();
     result_thread.join();
     
+    // 清理资源
     {
         boost::lock_guard<boost::mutex> lock(detector_mutex);
         global_detector.reset();
+    }
+    
+    {
+        boost::lock_guard<boost::mutex> lock(pnp_mutex);
+        armor_pnp_solver.reset();
+        energy_pnp_solver.reset();
     }
     
     std::cout << "程序已正常退出" << std::endl;

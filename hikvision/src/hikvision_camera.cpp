@@ -24,10 +24,10 @@ namespace camera {
     };
 
     //^ ********************************** 相机初始化 ************************************ //
-    void HikCamera::Init(bool debug_flag, const std::string &config_file_path, const std::string &intrinsic_para_file_path,bool use_mfs) {
+    void HikCamera::Init(bool debug_flag, const std::string &config_file_path,bool use_mfs) {
         handle = NULL;
         CameraConfigFilePath = config_file_path; // 相机参数文件路径
-        CameraIntrinsicParaFilePath = intrinsic_para_file_path; // 相机内参文件路径
+
         
 
         YAML::Node config_file;
