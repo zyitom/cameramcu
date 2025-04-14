@@ -33,6 +33,7 @@
 #include <array>
 #include <string>
 #include <fstream>
+#include <rclcpp/rclcpp.hpp>
 // 性能优化的关键参数
 constexpr int MAX_QUEUE_SIZE = 10;         // 减少队列大小以降低内存占用
 constexpr float TIME_MATCH_MIN_MS = 7;     // 时间戳匹配最小值 (ms)
@@ -220,8 +221,8 @@ void camera_thread_func() {
                 new_frame_available.store(true, std::memory_order_release);
             }
             
-            // cv::imshow("Raw Camera", frame);
-            // cv::waitKey(1);
+            cv::imshow("Raw Camera", frame);
+            cv::waitKey(1);
             
         }
     }
@@ -692,8 +693,8 @@ void result_processing_thread_func() {
                         }
                         
                         // 显示处理后的图像
-                        // cv::imshow("Detection and Pose Estimation", result.frame);
-                        // cv::waitKey(1);
+                        cv::imshow("Detection and Pose Estimation", result.frame);
+                        cv::waitKey(1);
                     }
                 } else {
                     // 如果还没准备好，放回队列末尾
@@ -762,15 +763,58 @@ bool load_camera_parameters_yaml(const std::string& yaml_file,
     }
 }
 
+#include <signal.h>  // Add this for signal handling
+
+// Add this near the top of your file with other global variables
+std::atomic<bool> received_sigint(false);
+
+// Add this function before main()
+void sigint_handler(int signum) {
+    (void)signum;  // Suppress unused parameter warning
+    received_sigint.store(true);
+    running.store(false);
+    std::cout << "Received shutdown signal, terminating gracefully..." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     std::string port_name = "/dev/ttyACM0";  
-    int baud_rate = 92160000;                 
+    int baud_rate = 921600;                 
     
     // 模型和标定文件路径
     std::string model_path = "/home/zyi/Downloads/0405_9744.onnx"; 
     std::string device_name = "GPU";
     std::string calibration_file = "/home/zyi/cs016_8mm.yaml";
     
+    // Initialize ROS 2 with disabled signal handlers
+    rclcpp::InitOptions init_options;
+    init_options.shutdown_on_signal = false;  // Corrected from shutdown_on_sigint
+    rclcpp::init(argc, argv, init_options);
+    
+    // Register our own signal handler
+    signal(SIGINT, sigint_handler);
+    
+    auto node = std::make_shared<rclcpp::Node>("helios_vision_node");
+    
+    // Get parameters from ROS2 if specified, otherwise use defaults
+    node->declare_parameter("port_name", port_name);
+    node->declare_parameter("baud_rate", baud_rate);
+    node->declare_parameter("model_path", model_path);
+    node->declare_parameter("device_name", device_name);
+    node->declare_parameter("calibration_file", calibration_file);
+    
+    // Only override values if they're explicitly set in the ROS 2 parameter system
+    if (node->has_parameter("port_name")) 
+        port_name = node->get_parameter("port_name").as_string();
+    if (node->has_parameter("baud_rate")) 
+        baud_rate = node->get_parameter("baud_rate").as_int();
+    if (node->has_parameter("model_path")) 
+        model_path = node->get_parameter("model_path").as_string();
+    if (node->has_parameter("device_name")) 
+        device_name = node->get_parameter("device_name").as_string();
+    if (node->has_parameter("calibration_file")) 
+        calibration_file = node->get_parameter("calibration_file").as_string();
+    
+    // Continue to support command line arguments which override everything
     if (argc > 1) {
         port_name = argv[1];
     }
@@ -787,23 +831,35 @@ int main(int argc, char* argv[]) {
         calibration_file = argv[4];
     }
     
+    // Print the settings that will be used
+    std::cout << "Using settings:" << std::endl;
+    std::cout << "  Port: " << port_name << std::endl;
+    std::cout << "  Baud rate: " << baud_rate << std::endl;
+    std::cout << "  Model path: " << model_path << std::endl;
+    std::cout << "  Device: " << device_name << std::endl;
+    std::cout << "  Calibration file: " << calibration_file << std::endl;
+    
     // 加载相机参数
     std::array<double, 9> camera_matrix;
     std::vector<double> dist_coeffs;
     
     if (!load_camera_parameters_yaml(calibration_file, camera_matrix, dist_coeffs)) {
-            std::cerr << "Failed to load camera parameters. Exiting." << std::endl;
-            return EXIT_FAILURE;
-        }
+        std::cerr << "Failed to load camera parameters. Exiting." << std::endl;
+        rclcpp::shutdown();
+        return EXIT_FAILURE;
+    }
+    
     // 初始化检测器
     if (!initialize_detector(model_path, device_name)) {
         std::cerr << "Failed to initialize the detector. Exiting." << std::endl;
+        rclcpp::shutdown();
         return EXIT_FAILURE;
     }
     
     // 初始化PnP解算器
     if (!initialize_pnp_solvers(camera_matrix, dist_coeffs)) {
         std::cerr << "Failed to initialize PnP solvers. Exiting." << std::endl;
+        rclcpp::shutdown();
         return EXIT_FAILURE;
     }
     
@@ -850,10 +906,40 @@ int main(int argc, char* argv[]) {
         pthread_setaffinity_np(result_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
     }
     
-    cam_thread.join();
-    serial_thread.join();
-    matching_thread.join();
-    result_thread.join();
+    // Main loop to check for shutdown
+    std::cout << "All threads started. Press Ctrl+C to exit." << std::endl;
+    
+    while (rclcpp::ok() && !received_sigint.load()) {
+        rclcpp::spin_some(node);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    // Set running to false to signal all threads to terminate
+    std::cout << "Shutting down all threads..." << std::endl;
+    running.store(false);
+    
+    // Join threads with timeout - fixed to remove the error_code parameter
+    auto join_with_timeout = [](boost::thread& t, const std::string& name) {
+        if (t.joinable()) {
+            std::cout << "Waiting for " << name << " thread to terminate..." << std::endl;
+            
+            // try_join_for returns a boolean success indicator
+            bool joined = t.try_join_for(boost::chrono::seconds(3));
+            
+            if (!joined) {
+                std::cerr << "Thread " << name << " did not terminate gracefully, interrupting..." << std::endl;
+                t.interrupt();
+                t.try_join_for(boost::chrono::seconds(1));
+            } else {
+                std::cout << name << " thread terminated successfully." << std::endl;
+            }
+        }
+    };
+    
+    join_with_timeout(cam_thread, "camera");
+    join_with_timeout(serial_thread, "serial");
+    join_with_timeout(matching_thread, "matching");
+    join_with_timeout(result_thread, "result");
     
     // 清理资源
     {
@@ -867,6 +953,7 @@ int main(int argc, char* argv[]) {
         energy_pnp_solver.reset();
     }
     
+    rclcpp::shutdown();
     std::cout << "程序已正常退出" << std::endl;
     return 0;
 }
