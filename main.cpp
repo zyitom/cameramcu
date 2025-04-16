@@ -34,7 +34,27 @@
 #include <string>
 #include <fstream>
 #include <rclcpp/rclcpp.hpp>
-// 性能优化的关键参数
+#include <signal.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include "autoaim_interfaces/msg/armor.hpp"
+#include "autoaim_interfaces/msg/armors.hpp"
+#include <visualization_msgs/msg/marker.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+
+rclcpp::Publisher<autoaim_interfaces::msg::Armors>::SharedPtr armors_pub_;
+rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
+std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+visualization_msgs::msg::Marker armor_marker_;
+visualization_msgs::msg::Marker text_marker_;
+std::string node_namespace_;
+
+
+
+
 constexpr int MAX_QUEUE_SIZE = 10;         // 减少队列大小以降低内存占用
 constexpr float TIME_MATCH_MIN_MS = 7;     // 时间戳匹配最小值 (ms)
 constexpr float TIME_MATCH_MAX_MS = 9;     // 时间戳匹配最大值 (ms)
@@ -95,13 +115,14 @@ boost::circular_buffer<TimestampedFrame> frame_queue(MAX_QUEUE_SIZE);
 boost::circular_buffer<TimestampedPacket> gyro_queue(MAX_QUEUE_SIZE);
 int last_timestamp;
 
-std::unique_ptr<YOLOXDetector> global_detector;
+
 boost::mutex detector_mutex;
 
-bool initialize_detector(const std::string& model_path, const std::string& device_name = "GPU") {
+std::unique_ptr<OVnetDetector> global_detector;
+bool initialize_detector(const std::string& model_path, bool is_blue = true) {
     try {
         boost::lock_guard<boost::mutex> lock(detector_mutex);
-        global_detector = std::make_unique<YOLOXDetector>(model_path, device_name);
+        global_detector = std::make_unique<OVnetDetector>(model_path, is_blue);
         return global_detector->initialize();
     } catch (const std::exception& e) {
         boost::lock_guard<boost::mutex> lock(cout_mutex);
@@ -116,11 +137,10 @@ bool initialize_pnp_solvers(const std::array<double, 9>& camera_matrix, const st
         
 
         armor_pnp_solver = std::make_unique<ArmorProjectYaw>(camera_matrix, dist_coeffs);
-        armor_pnp_solver->set_use_projection(true); // 使用投影优化
+        armor_pnp_solver->set_use_projection(true); 
         
-        // 初始化能量机关PnP解算器
         energy_pnp_solver = std::make_unique<EnergyProjectRoll>(camera_matrix, dist_coeffs);
-        energy_pnp_solver->set_use_projection(true); // 使用投影优化
+        energy_pnp_solver->set_use_projection(true); 
         
         return true;
     } catch (const std::exception& e) {
@@ -130,37 +150,52 @@ bool initialize_pnp_solvers(const std::array<double, 9>& camera_matrix, const st
     }
 }
 
-constexpr int MAX_PENDING_RESULTS = 5; // 限制挂起的结果数量
-boost::mutex pending_results_mutex;
+constexpr int MAX_PENDING_RESULTS = 5; 
+boost::mutex armor_pending_results_mutex;
 
-std::deque<std::tuple<std::chrono::high_resolution_clock::time_point, helios::MCUPacket, std::shared_future<FrameData>>> pending_results;
+std::deque<std::tuple<std::chrono::high_resolution_clock::time_point, helios::MCUPacket, std::shared_future<FrameData>>> armor_pending_results;
 
 // 用全局异步检测函数替代原有的process_matched_pair函数
 void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_data, std::chrono::high_resolution_clock::time_point timestamp) {
     FrameData input_data(timestamp, frame);
+    if(gyro_data.autoaim_mode == 0){
     
-    // 异步提交检测任务（不阻塞主线程）
-    std::shared_future<FrameData> shared_future;
-    {
-        boost::lock_guard<boost::mutex> lock(detector_mutex);
-        if (global_detector) {
-            // 将std::future转换为std::shared_future
-            std::future<FrameData> future = global_detector->submit_frame_async(input_data);
-            shared_future = future.share();
-        } else {
-            std::cerr << "Detector not initialized." << std::endl;
-            return;
+        std::shared_future<FrameData> shared_future;
+        {
+            boost::lock_guard<boost::mutex> lock(detector_mutex);
+            if (global_detector) {
+                // 将std::future转换为std::shared_future
+                std::future<FrameData> future = global_detector->submit_frame_async(input_data);
+                shared_future = future.share();
+            } else {
+                std::cerr << "Detector not initialized." << std::endl;
+                return;
+            }
+        }
+        
+        {
+            boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
+            armor_pending_results.emplace_back(timestamp, gyro_data, shared_future);
+            
+            // 限制队列大小
+            if (armor_pending_results.size() > MAX_PENDING_RESULTS) {
+                armor_pending_results.pop_front();
+            }
         }
     }
-    
-    {
-        boost::lock_guard<boost::mutex> lock(pending_results_mutex);
-        pending_results.emplace_back(timestamp, gyro_data, shared_future);
-        
-        // 限制队列大小
-        if (pending_results.size() > MAX_PENDING_RESULTS) {
-            pending_results.pop_front();
+    else{
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
+        std::cout << "Autoaim mode is 1, skipping detection." << std::endl;
+        {
+            // boost::lock_guard<boost::mutex> lock(pending_results_mutex);
+            // //pending_results.emplace_back(armor)
+            // if (pending_results.size() > MAX_PENDING_RESULTS) {
+            //     pending_results.pop_front();
+            // }
         }
+        //打符
+
+        
     }
 }
 
@@ -209,7 +244,6 @@ void camera_thread_func() {
         bool hasNew = hikCam.ReadImg(frame, &device_ts, &host_ts);
         
         if (hasNew && !frame.empty()) {
-            // 快速路径：如果队列为空，直接添加而不需要锁
             if (frame_queue.empty() && !new_frame_available.load(std::memory_order_relaxed)) {
                 boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
                 frame_queue.push_back(TimestampedFrame(frame, host_ts));
@@ -284,14 +318,14 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
             return false;
         }
         
-        // 配置串口参数
+
         serial_port.set_option(boost::asio::serial_port_base::baud_rate(baud_rate), ec);
         serial_port.set_option(boost::asio::serial_port_base::character_size(8), ec);
         serial_port.set_option(boost::asio::serial_port_base::parity(boost::asio::serial_port_base::parity::none), ec);
         serial_port.set_option(boost::asio::serial_port_base::stop_bits(boost::asio::serial_port_base::stop_bits::one), ec);
         serial_port.set_option(boost::asio::serial_port_base::flow_control(boost::asio::serial_port_base::flow_control::none), ec);
         
-        // 使用POSIX API设置非阻塞模式
+
         try {
             int fd = serial_port.native_handle();
             int flags = fcntl(fd, F_GETFL, 0);
@@ -398,18 +432,18 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
                         break;
                     }
                     
-                    // 解析帧头
+                    // 帧头
                     helios::FrameHeader header;
                     memcpy(&header, receive_buffer.data(), sizeof(helios::FrameHeader));
                     
-                    // 简单验证，确保数据长度在合理范围内
+                    // 确保数据长度在合理
                     if (header.data_length > 1024 || header.data_length < sizeof(helios::MCUPacket)) {
                         // 非法长度，删除SOF，继续查找下一个SOF
                         receive_buffer.erase(receive_buffer.begin());
                         continue;
                     }
                     
-                    // 检查是否有完整的数据包(仅包含帧头和数据，忽略CRC16)
+                    // TODO: CRC校验
                     size_t total_packet_size = sizeof(helios::FrameHeader) + header.data_length;
                     if (receive_buffer.size() < total_packet_size) {
                         // 数据不完整，等待更多数据
@@ -424,6 +458,21 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
                         
                         helios::MCUPacket packet;
                         memcpy(&packet, receive_buffer.data() + sizeof(helios::FrameHeader), sizeof(helios::MCUPacket));
+                        
+                        
+                        // 自身颜色 0 蓝 1 红
+                        static bool last_is_blue = true; // 默认蓝队
+                        bool current_is_blue = (packet.self_color == 1);
+                        
+                        // 只有当颜色发生变化时才更新检测器的颜色设置
+                        if (current_is_blue != last_is_blue) {
+                            boost::lock_guard<boost::mutex> lock(detector_mutex);
+                            if (global_detector) {
+                                global_detector->set_is_blue(current_is_blue);
+                            }
+                            last_is_blue = current_is_blue;
+                        }
+                        
                         {
                             boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
                             gyro_queue.push_back(TimestampedPacket(packet, now));
@@ -431,7 +480,6 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
                         }
                     }
                     
-                    // 删除已处理的数据包
                     receive_buffer.erase(receive_buffer.begin(), receive_buffer.begin() + total_packet_size);
                 }
             }
@@ -448,10 +496,7 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         
-        // 短暂休眠以减少CPU使用
-        if (bytes_read == 0) {
-            std::this_thread::sleep_for(std::chrono::microseconds(100));
-        }
+        
     }
     
     // 关闭串口
@@ -460,7 +505,7 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
             boost::system::error_code close_ec;
             serial_port.close(close_ec);
         } catch (...) {
-            // 忽略关闭错误
+          
         }
     }
     
@@ -595,27 +640,25 @@ void result_processing_thread_func() {
     
     while (running) {
         // 处理队列中的一个结果
-        std::tuple<std::chrono::high_resolution_clock::time_point, helios::MCUPacket, std::shared_future<FrameData>> result_tuple;
+        std::tuple<std::chrono::high_resolution_clock::time_point, helios::MCUPacket, std::shared_future<FrameData>> armor_result_tuple;
         bool has_result = false;
         
         {
-            boost::lock_guard<boost::mutex> lock(pending_results_mutex);
-            if (!pending_results.empty()) {
-                result_tuple = pending_results.front();
-                pending_results.pop_front();
+            boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
+            if (!armor_pending_results.empty()) {
+                armor_result_tuple = armor_pending_results.front();
+                armor_pending_results.pop_front();
                 has_result = true;
             }
         }
         
         if (has_result) {
-            auto& timestamp = std::get<0>(result_tuple);
-            auto& gyro_data = std::get<1>(result_tuple);
-            auto& future = std::get<2>(result_tuple);
+            auto& timestamp = std::get<0>(armor_result_tuple);
+            auto& gyro_data = std::get<1>(armor_result_tuple);
+            auto& future = std::get<2>(armor_result_tuple);
             
-            try {
-                // 等待结果完成，但设置超时以避免阻塞
+            if(gyro_data.autoaim_mode == 0){
                 std::future_status status = future.wait_for(std::chrono::milliseconds(50));
-                
                 if (status == std::future_status::ready) {
                     // 获取检测结果
                     FrameData result = future.get();
@@ -638,57 +681,32 @@ void result_processing_thread_func() {
                             
                             {
                                 boost::lock_guard<boost::mutex> lock(pnp_mutex);
-                                
-                                if (armor.type == ArmorType::ENERGY_TARGET || armor.type == ArmorType::ENERGY_FAN) {
-                                    // 使用能量机关PnP解算器
-                                    if (energy_pnp_solver) {
-                                        // 更新变换信息
-                                        auto transform_info = helios_cv::createEnergyTransformInfo();
-                                        energy_pnp_solver->update_transform_info(transform_info.get());
-                                        
-                                        // 解算姿态
-                                        pose_solved = energy_pnp_solver->solve_pose(armor, rvec, tvec);
-                                        
-                                        // 可视化投影点 (如果需要)
-                                        if (pose_solved) {
-                                            energy_pnp_solver->draw_projection_points(result.frame);
-                                        }
-                                    }
-                                } else {
-                                    // 使用装甲板PnP解算器
                                     if (armor_pnp_solver) {
-                                        // 更新变换信息
-                                        
                                         armor_pnp_solver->update_transform_info(transform_info.get());
-                                        
-                                        // 解算姿态
                                         pose_solved = armor_pnp_solver->solve_pose(armor, rvec, tvec);
-                                    
-
                                         if (pose_solved) {
                                             armor_pnp_solver->draw_projection_points(result.frame);
                                         }
                                     }
-                                }
+                                
                             }
-                            
+                            autoaim_interfaces::msg::Armor temp_armor;
                             if (pose_solved) {
-                                // 计算距离 (单位：米)
-                                double distance = cv::norm(tvec);
+                                // // 计算距离 (单位：米)
+                                // double distance = cv::norm(tvec);
                                 
-                                // 计算装甲板在世界坐标系中的位置
-                                cv::Mat rotation_matrix;
-                                cv::Rodrigues(rvec, rotation_matrix);
+                                // // 计算装甲板在世界坐标系中的位置
+                                // cv::Mat rotation_matrix;
+                                // cv::Rodrigues(rvec, rotation_matrix);
                                 
-                                // 在图像上显示姿态信息
-                                std::string pose_text = "Dist: " + std::to_string(distance).substr(0, 4) + "m";
-                                cv::putText(result.frame, pose_text, armor.center, 
-                                          cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
+                                // // 在图像上显示姿态信息
+                                // std::string pose_text = "Dist: " + std::to_string(distance).substr(0, 4) + "m";
+                                // cv::putText(result.frame, pose_text, armor.center, 
+                                //           cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
                                 
-                                // 输出姿态信息
-                                boost::lock_guard<boost::mutex> lock(cout_mutex);
+                                // // 输出姿态信息
+                                // boost::lock_guard<boost::mutex> lock(cout_mutex);
                                 
-                                // 这里可以添加额外的处理，比如发送位置信息给控制系统
                             }
                         }
                         
@@ -698,16 +716,10 @@ void result_processing_thread_func() {
                     }
                 } else {
                     // 如果还没准备好，放回队列末尾
-                    boost::lock_guard<boost::mutex> lock(pending_results_mutex);
-                    pending_results.push_back(result_tuple);
+                    boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
+                    armor_pending_results.push_back(armor_result_tuple);
                 }
-            } catch (const std::exception& e) {
-                boost::lock_guard<boost::mutex> lock(cout_mutex);
-                std::cerr << "Error processing result: " << e.what() << std::endl;
             }
-        } else {
-            // 如果队列为空，短暂休眠
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
     }
 }
@@ -763,14 +775,13 @@ bool load_camera_parameters_yaml(const std::string& yaml_file,
     }
 }
 
-#include <signal.h>  // Add this for signal handling
 
-// Add this near the top of your file with other global variables
+
 std::atomic<bool> received_sigint(false);
 
-// Add this function before main()
+
 void sigint_handler(int signum) {
-    (void)signum;  // Suppress unused parameter warning
+    (void)signum;  
     received_sigint.store(true);
     running.store(false);
     std::cout << "Received shutdown signal, terminating gracefully..." << std::endl;
@@ -836,7 +847,6 @@ int main(int argc, char* argv[]) {
     std::cout << "  Port: " << port_name << std::endl;
     std::cout << "  Baud rate: " << baud_rate << std::endl;
     std::cout << "  Model path: " << model_path << std::endl;
-    std::cout << "  Device: " << device_name << std::endl;
     std::cout << "  Calibration file: " << calibration_file << std::endl;
     
     // 加载相机参数
@@ -848,9 +858,8 @@ int main(int argc, char* argv[]) {
         rclcpp::shutdown();
         return EXIT_FAILURE;
     }
-    
     // 初始化检测器
-    if (!initialize_detector(model_path, device_name)) {
+    if (!initialize_detector(model_path)) {
         std::cerr << "Failed to initialize the detector. Exiting." << std::endl;
         rclcpp::shutdown();
         return EXIT_FAILURE;
@@ -865,7 +874,6 @@ int main(int argc, char* argv[]) {
     
     // 初始化坐标变换管理器
     auto& transform_manager = helios_cv::TransformManager::getInstance();
-    // 可以设置相机的安装参数，如果需要的话
     transform_manager.setCameraParams();
     
     // 创建必要的线程

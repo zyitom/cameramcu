@@ -446,6 +446,13 @@ namespace camera {
                 } else {
                     printf("Set TriggerSource Failed! nRet = [%x]\n\n", nRet);
                 }
+                
+                nRet = MV_CC_SetBayerCvtQuality(handle, 1); //设置Bayer转换质量
+                if (MV_OK == nRet) {
+                    printf("set BayerCvtQuality OK!\n");
+                } else {
+                    printf("Set BayerCvtQuality Failed! nRet = [%x]\n\n", nRet);
+                }
                 break;
             }
             case CAP_PROP_LINE_SELECTOR: {
@@ -456,6 +463,7 @@ namespace camera {
                     printf("Set LineSelector Failed! nRet = [%x]\n\n", nRet);
                 }
                 break;
+                
             }
             default:
                 return 0;

@@ -34,6 +34,7 @@ namespace camera
         CAP_PROP_TRIGGER_MODE,      //外部触发
         CAP_PROP_TRIGGER_SOURCE,    //触发源
         CAP_PROP_LINE_SELECTOR      //触发线
+        
 
     };
 
