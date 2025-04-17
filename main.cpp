@@ -634,11 +634,14 @@ void data_matching_thread_func() {
 }
 
 
+// 1. Optimize the result_processing_thread_func to reduce lock contention
 void result_processing_thread_func() {
     auto& transform_manager = helios_cv::TransformManager::getInstance();
     
+    // Pre-allocate message objects outside the loop to reduce memory allocations
+    auto armors_msg = std::make_unique<autoaim_interfaces::msg::Armors>();
+    
     while (running) {
-        // 处理队列中的一个结果
         std::tuple<std::chrono::high_resolution_clock::time_point, helios::MCUPacket, std::shared_future<FrameData>> armor_result_tuple;
         bool has_result = false;
         
@@ -651,134 +654,95 @@ void result_processing_thread_func() {
             }
         }
         
-        if (has_result) {
-            auto& timestamp = std::get<0>(armor_result_tuple);
-            auto& gyro_data = std::get<1>(armor_result_tuple);
-            auto& future = std::get<2>(armor_result_tuple);
-            
-            if(gyro_data.autoaim_mode == 0){
-                std::future_status status = future.wait_for(std::chrono::milliseconds(50));
-                if (status == std::future_status::ready) {
-                    // 获取检测结果
-                    FrameData result = future.get();
-                    global_detector->visualize_detection_result(result);
+        if (!has_result) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
+        
+        auto& timestamp = std::get<0>(armor_result_tuple);
+        auto& gyro_data = std::get<1>(armor_result_tuple);
+        auto& future = std::get<2>(armor_result_tuple);
+        
+        if(gyro_data.autoaim_mode != 0) {
+            continue; 
+        }
+        
+        std::future_status status = future.wait_for(std::chrono::milliseconds(5));
+        if (status != std::future_status::ready) {
+            boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
+            armor_pending_results.push_back(armor_result_tuple);
+            continue;
+        }
 
-                    auto armors_msg = std::make_unique<autoaim_interfaces::msg::Armors>();
+        FrameData result = future.get();
+
+        transform_manager.updateGimbalAngles(
+            gyro_data.yaw,  
+            gyro_data.pitch, 
+            gyro_data.roll
+        );
+        
+        auto transform_info = helios_cv::createArmorTransformInfo();
+        
+        armors_msg->armors.clear();
+        
+        auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(result.timestamp).time_since_epoch().count();
+        rclcpp::Time ros_time(timestamp_ns);
+        armors_msg->header.stamp = ros_time;
+        armors_msg->header.frame_id = "camera_optical_frame";
+        
+        if (result.has_valid_results()) {
+            boost::lock_guard<boost::mutex> lock(pnp_mutex);
+            if (armor_pnp_solver) {
+                armor_pnp_solver->update_transform_info(transform_info.get());
+                
+                for (const auto& armor : result.armors) {
+                    cv::Mat rvec, tvec;
+                    bool pose_solved = armor_pnp_solver->solve_pose(armor, rvec, tvec);
                     
-                    // 将FrameData的时间戳转换为ROS时间
-                    auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(result.timestamp).time_since_epoch().count();
-                    rclcpp::Time ros_time(timestamp_ns);
-                    armors_msg->header.stamp = ros_time;
-                    armors_msg->header.frame_id = "camera_optical_frame";
-                    
-                    transform_manager.updateGimbalAngles(
-                        gyro_data.yaw,  
-                        gyro_data.pitch, 
-                        gyro_data.roll
-                    );
-                    
-                    // 创建变换信息
-                    auto transform_info = helios_cv::createArmorTransformInfo();
-                    
-                    // 处理每个检测到的装甲板
-                    if (result.has_valid_results()) {
-                        for (const auto& armor : result.armors) {
-                            // 根据装甲板类型选择合适的PnP解算器
-                            cv::Mat rvec, tvec; // 旋转向量和平移向量
-                            bool pose_solved = false;
+                    if (pose_solved) {
+                        autoaim_interfaces::msg::Armor armor_msg;
+                        
+                        armor_msg.number = armor.number;
+                        armor_msg.type = static_cast<int8_t>(armor.type);
+
+                        double dx = armor.center.x - result.frame.cols / 2.0;
+                        double dy = armor.center.y - result.frame.rows / 2.0;
+                        armor_msg.distance_to_image_center = std::hypot(dx, dy); 
+                        
+                        geometry_msgs::msg::Pose pose;
+                        pose.position.x = tvec.at<double>(0);
+                        pose.position.y = tvec.at<double>(1);
+                        pose.position.z = tvec.at<double>(2);
+                        
+                        double angle = cv::norm(rvec);
+                        if (angle > 1e-6) {
+                            double inv_angle = 1.0 / angle;
+                            double x = rvec.at<double>(0) * inv_angle;
+                            double y = rvec.at<double>(1) * inv_angle;
+                            double z = rvec.at<double>(2) * inv_angle;
                             
-                            {
-                                boost::lock_guard<boost::mutex> lock(pnp_mutex);
-                                if (armor_pnp_solver) {
-                                    armor_pnp_solver->update_transform_info(transform_info.get());
-                                    pose_solved = armor_pnp_solver->solve_pose(armor, rvec, tvec);
-                                    if (pose_solved) {
-                                        armor_pnp_solver->draw_projection_points(result.frame);
-                                    }
-                                }
-                                
-                            }
+                            tf2::Quaternion q;
+                            q.setRotation(tf2::Vector3(x, y, z), angle);
                             
-                            if (pose_solved) {
-                                // Create the Armor message
-                                autoaim_interfaces::msg::Armor armor_msg;
-                                
-                                // Fill in armor details with proper type conversion
-                                armor_msg.number = armor.number;
-                                armor_msg.type = static_cast<int8_t>(armor.type);
-                                
-                                // Calculate distance to image center
-                                double dx = armor.center.x - result.frame.cols / 2.0;
-                                double dy = armor.center.y - result.frame.rows / 2.0;
-                                armor_msg.distance_to_image_center = std::sqrt(dx*dx + dy*dy);
-                                
-                                // Fill in the pose
-                                geometry_msgs::msg::Pose pose;
-                                
-                                // Set position from tvec
-                                pose.position.x = tvec.at<double>(0);
-                                pose.position.y = tvec.at<double>(1);
-                                pose.position.z = tvec.at<double>(2);
-                                
-                                // Debug: Print the rvec values
-                                std::cout << "rvec: " 
-                                          << rvec.at<double>(0) << ", " 
-                                          << rvec.at<double>(1) << ", " 
-                                          << rvec.at<double>(2) << std::endl;
-                                
-                                // Direct conversion from rotation vector to quaternion
-                                double angle = cv::norm(rvec);
-                                if (angle > 1e-6) {  // Avoid division by zero
-                                    double x = rvec.at<double>(0) / angle;
-                                    double y = rvec.at<double>(1) / angle;
-                                    double z = rvec.at<double>(2) / angle;
-                                    
-                                    // Create quaternion from axis-angle
-                                    tf2::Quaternion q;
-                                    q.setRotation(tf2::Vector3(x, y, z), angle);
-                                    
-                                    pose.orientation.x = q.x();
-                                    pose.orientation.y = q.y();
-                                    pose.orientation.z = q.z();
-                                    pose.orientation.w = q.w();
-                                    
-                                    // Debug: Print the quaternion values
-                                    std::cout << "Quaternion: " 
-                                              << q.x() << ", " 
-                                              << q.y() << ", " 
-                                              << q.z() << ", " 
-                                              << q.w() << std::endl;
-                                } else {
-                                    // If rotation is very small, use identity quaternion
-                                    pose.orientation.x = 0.0;
-                                    pose.orientation.y = 0.0;
-                                    pose.orientation.z = 0.0;
-                                    pose.orientation.w = 1.0;
-                                    
-                                    std::cout << "Very small rotation, using identity quaternion" << std::endl;
-                                }
-                                
-                                armor_msg.pose = pose;
-                                
-                                // Add armor to the armors message
-                                armors_msg->armors.push_back(armor_msg);
-                            }
+                            pose.orientation.x = q.x();
+                            pose.orientation.y = q.y();
+                            pose.orientation.z = q.z();
+                            pose.orientation.w = q.w();
                         }
+                        
+                        armor_msg.pose = pose;
+                        armors_msg->armors.push_back(armor_msg);
                     }
-                    
-                    // 始终发布装甲板消息，即使是空的
-                    armors_pub_->publish(*armors_msg);
-                    
-                    // 显示处理后的图像
-                    cv::imshow("Detection and Pose Estimation", result.frame);
-                    cv::waitKey(1);
-                } else {
-                    // 如果还没准备好，放回队列末尾
-                    boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
-                    armor_pending_results.push_back(armor_result_tuple);
+                }
+                
+                if (!armors_msg->armors.empty()) {
+                    armor_pnp_solver->draw_projection_points(result.frame);
                 }
             }
         }
+        
+        armors_pub_->publish(*armors_msg);
     }
 }
 bool load_camera_parameters_yaml(const std::string& yaml_file, 
