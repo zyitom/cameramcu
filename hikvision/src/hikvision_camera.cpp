@@ -345,6 +345,7 @@ namespace camera {
                 } else {
                     printf("Set ExposureMode Failed! nRet = [%x]\n\n", nRet);
                 }
+                
                 break;
             }
             case CAP_PROP_EXPOSURE_TIME: {
@@ -452,6 +453,13 @@ namespace camera {
                     printf("set BayerCvtQuality OK!\n");
                 } else {
                     printf("Set BayerCvtQuality Failed! nRet = [%x]\n\n", nRet);
+                }
+                
+                nRet = MV_CC_SetEnumValue(handle, "ADCBitDepth", 0); //8bit
+                if (MV_OK == nRet) {
+                    printf("set ADCBitDepth 8-bit OK!\n");
+                } else {
+                    printf("Set ADCBitDepth 8-bit Failed! nRet = [%x]\n\n", nRet);
                 }
                 break;
             }

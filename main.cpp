@@ -58,7 +58,7 @@ std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 visualization_msgs::msg::Marker armor_marker_;
 visualization_msgs::msg::Marker text_marker_;
 std::string node_namespace_;
-
+std::unique_ptr<SimpleTransformManager> transform_manager;
 
 
 
@@ -691,23 +691,50 @@ void data_matching_thread_func() {
     }
 }
 
-
 void result_processing_thread_func() {
-    // Pre-allocate message objects outside the loop to reduce memory allocations
+    // 预先分配消息对象以减少内存分配
     auto armors_msg = std::make_unique<autoaim_interfaces::msg::Armors>();
+    visualization_msgs::msg::MarkerArray marker_array;
     
+    // 创建装甲板marker模板
+    visualization_msgs::msg::Marker armor_marker;
+    armor_marker.ns = "armors";
+    armor_marker.action = visualization_msgs::msg::Marker::ADD;
+    armor_marker.type = visualization_msgs::msg::Marker::CUBE;
+    armor_marker.scale.x = 0.05;
+    armor_marker.scale.z = 0.125;
+    armor_marker.color.a = 1.0;
+    armor_marker.color.g = 0.5;
+    armor_marker.color.b = 1.0;
+    armor_marker.lifetime = rclcpp::Duration::from_seconds(0.1);
+    
+    // 创建文本marker模板
+    visualization_msgs::msg::Marker text_marker;
+    text_marker.ns = "classification";
+    text_marker.action = visualization_msgs::msg::Marker::ADD;
+    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+    text_marker.scale.z = 0.1;
+    text_marker.color.a = 1.0;
+    text_marker.color.r = 1.0;
+    text_marker.color.g = 1.0;
+    text_marker.color.b = 1.0;
+    text_marker.lifetime = rclcpp::Duration::from_seconds(0.1);
+    
+
     while (running) {
         std::tuple<std::chrono::high_resolution_clock::time_point, helios::MCUPacket, std::shared_future<FrameData>> armor_result_tuple;
         bool has_result = false;
         
         {
-            boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
-            if (!armor_pending_results.empty()) {
-                armor_result_tuple = armor_pending_results.front();
-                armor_pending_results.pop_front();
-                has_result = true;
-            }
+                boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
+                if (!armor_pending_results.empty()) {
+                    armor_result_tuple = armor_pending_results.front();
+                    armor_pending_results.pop_front();
+                    has_result = true;
+                }
         }
+        
+        
         
         if (!has_result) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -719,7 +746,7 @@ void result_processing_thread_func() {
         auto& future = std::get<2>(armor_result_tuple);
         
         if(gyro_data.autoaim_mode != 0) {
-            continue; 
+            continue; // 跳过非自瞄模式的数据
         }
         
         std::future_status status = future.wait_for(std::chrono::milliseconds(5));
@@ -731,16 +758,17 @@ void result_processing_thread_func() {
 
         FrameData result = future.get();
 
-        // Convert timestamp to ROS time
+        // 转换时间戳为ROS时间
         auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(timestamp).time_since_epoch().count();
         rclcpp::Time ros_time(timestamp_ns);
         
-        // Lookup transformations using TF2
+        // TF转换部分
+        /*
         geometry_msgs::msg::TransformStamped ts_odom2cam, ts_cam2odom;
         double yaw = 0.0;
-        
+        transform_manager->updateTransforms(gyro_data.yaw, gyro_data.pitch);
         try {
-            // Get transforms from TF2 buffer
+            // 从TF2缓冲区获取变换
             ts_odom2cam = tf2_buffer->lookupTransform(
                 "camera_optical_frame",
                 "odoom",
@@ -762,7 +790,7 @@ void result_processing_thread_func() {
                 rclcpp::Duration::from_seconds(0.05)
             );
             
-            // Extract yaw angle
+            // 提取yaw角度
             tf2::Quaternion q(
                 odom2yawlink.transform.rotation.x,
                 odom2yawlink.transform.rotation.y,
@@ -778,83 +806,140 @@ void result_processing_thread_func() {
             std::cerr << "Error while transforming: " << ex.what() << std::endl;
             continue;
         }
-        
-        // Convert TF2 transforms to format needed by PnP solver
+        cv::Quatd transform_odom2cam_rotation;
+        cv::Vec3d transform_odom2cam_translation;
+        cv::Quatd transform_cam2odom_rotation;
+        cv::Vec3d transform_cam2odom_translation;
+        transform_manager->getOdom2Cam(transform_odom2cam_rotation, transform_odom2cam_translation);
+        transform_manager->getCam2Odom(transform_cam2odom_rotation, transform_cam2odom_translation);
+
+        // 转换TF2变换为PnP求解器需要的格式
         cv::Quatd odom2cam_rotation = ros2cv(ts_odom2cam.transform.rotation);
         cv::Quatd cam2odom_rotation = ros2cv(ts_cam2odom.transform.rotation);
         
-        // Create transform info with the TF2 data
+        // 使用TF2数据创建变换信息
         struct helios_cv::ArmorTransformInfo armor_transform_info(cv::Quatd(1, 0, 0, 0), cv::Quatd(0, 0, 0, 0));
-        armor_transform_info.odom2cam_r = odom2cam_rotation;  // From odom to cam
+        armor_transform_info.odom2cam_r = odom2cam_rotation;  // 从odom到cam
         armor_transform_info.cam2odom_r = cam2odom_rotation;
+        */
         
         armors_msg->armors.clear();
         armors_msg->header.stamp = ros_time;
         armors_msg->header.frame_id = "camera_optical_frame";
         
         if (result.has_valid_results()) {
-            boost::lock_guard<boost::mutex> lock(pnp_mutex);
-            if (armor_pnp_solver) {
-                // Update transform info in PnP solver using TF2 data
-                armor_pnp_solver->update_transform_info(&armor_transform_info);
-                // std::cout << "odom2cam_rotation:x=" << odom2cam_rotation.x 
-                //           << " y=" << odom2cam_rotation.y
-                //           << " z=" << odom2cam_rotation.z
-                //           << " w=" << odom2cam_rotation.w << std::endl; 
-                // std::cout << "cam2odom_rotation:x=" << cam2odom_rotation.x 
-                //           << " y=" << cam2odom_rotation.y
-                //           << " z=" << cam2odom_rotation.z
-                //           << " w=" << cam2odom_rotation.w << std::endl; 
-                for (const auto& armor : result.armors) {
-                    cv::Mat rvec, tvec;
-                    bool pose_solved = armor_pnp_solver->solve_pose(armor, rvec, tvec);
-                    autoaim_interfaces::msg::Armor temp_armor;
-                    if (pose_solved) {
-                        autoaim_interfaces::msg::Armor armor_msg;
+            try {
+                boost::lock_guard<boost::mutex> lock(pnp_mutex);
+                if (armor_pnp_solver) {
+                    // 更新变换矩阵
+                    transform_manager->updateTransforms(gyro_data.yaw, gyro_data.pitch);
+                    
+                    // 获取变换
+                    cv::Quatd odom2cam_rotation;
+                    cv::Vec3d odom2cam_translation;
+                    cv::Quatd cam2odom_rotation;
+                    cv::Vec3d cam2odom_translation;
+                    
+                    transform_manager->getOdom2Cam(odom2cam_rotation, odom2cam_translation);
+                    transform_manager->getCam2Odom(cam2odom_rotation, cam2odom_translation);
+                    
+                    // 创建具有有效四元数的变换信息
+                    struct helios_cv::ArmorTransformInfo armor_transform_info(odom2cam_rotation, cam2odom_rotation);
+                    armor_pnp_solver->update_transform_info(&armor_transform_info);
+                    
+                    for (const auto& armor : result.armors) {
+                        cv::Mat rvec, tvec;
+                        bool pose_solved = armor_pnp_solver->solve_pose(armor, rvec, tvec);
                         
-                        temp_armor.type = static_cast<int>(armor.type);
-                        temp_armor.number = armor.number;
+                        if (pose_solved) {
+                            autoaim_interfaces::msg::Armor armor_msg;
+                            
+                            armor_msg.type = static_cast<int>(armor.type);
+                            armor_msg.number = armor.number;
 
-                        temp_armor.pose.position.x = tvec.at<double>(0);
-                        temp_armor.pose.position.y = tvec.at<double>(1);
-                        temp_armor.pose.position.z = tvec.at<double>(2);
+                            armor_msg.pose.position.x = tvec.at<double>(0);
+                            armor_msg.pose.position.y = tvec.at<double>(1);
+                            armor_msg.pose.position.z = tvec.at<double>(2);
 
-                        cv::Mat rotation_matrix;
-                        if (armor_pnp_solver->use_projection()) {
-                            rotation_matrix = rvec;
-                        } else {
-                            cv::Rodrigues(rvec, rotation_matrix);
+                            cv::Mat rotation_matrix;
+                            if (armor_pnp_solver->use_projection()) {
+                                rotation_matrix = rvec;
+                            } else {
+                                cv::Rodrigues(rvec, rotation_matrix);
+                            }
+                            tf2::Matrix3x3 tf2_rotation_matrix(
+                                rotation_matrix.at<double>(0, 0),
+                                rotation_matrix.at<double>(0, 1),
+                                rotation_matrix.at<double>(0, 2),
+                                rotation_matrix.at<double>(1, 0),
+                                rotation_matrix.at<double>(1, 1),
+                                rotation_matrix.at<double>(1, 2),
+                                rotation_matrix.at<double>(2, 0),
+                                rotation_matrix.at<double>(2, 1),
+                                rotation_matrix.at<double>(2, 2)
+                            );
+                            tf2::Quaternion tf2_quaternion;
+                            tf2_rotation_matrix.getRotation(tf2_quaternion);
+                            armor_msg.pose.orientation = tf2::toMsg(tf2_quaternion);
+                            armor_msg.distance_to_image_center =
+                                armor_pnp_solver->calculateDistanceToCenter(armor.center);
+
+                            armors_msg->armors.push_back(armor_msg);
                         }
-                        tf2::Matrix3x3 tf2_rotation_matrix(
-                            rotation_matrix.at<double>(0, 0),
-                            rotation_matrix.at<double>(0, 1),
-                            rotation_matrix.at<double>(0, 2),
-                            rotation_matrix.at<double>(1, 0),
-                            rotation_matrix.at<double>(1, 1),
-                            rotation_matrix.at<double>(1, 2),
-                            rotation_matrix.at<double>(2, 0),
-                            rotation_matrix.at<double>(2, 1),
-                            rotation_matrix.at<double>(2, 2)
-                        );
-                        tf2::Quaternion tf2_quaternion;
-                        tf2_rotation_matrix.getRotation(tf2_quaternion);
-                        temp_armor.pose.orientation = tf2::toMsg(tf2_quaternion);
-                        temp_armor.distance_to_image_center =
-                        armor_pnp_solver->calculateDistanceToCenter(armor.center);
-                       
-
-                        armors_msg->armors.push_back(temp_armor);
                     }
+                    
+                    if (!armors_msg->armors.empty()) {
+                        // 添加调试可视化
+                        armor_pnp_solver->draw_projection_points(result.frame);
+                        cv::imshow("Armor Projection", result.frame);
+                        cv::waitKey(1);
+                        
+                        // 发布装甲板markers
+                        marker_array.markers.clear();
+                        int marker_id = 0;
+                        
+                        for (const auto& armor : armors_msg->armors) {
+                            // 装甲板立方体marker
+                            armor_marker.id = marker_id++;
+                            armor_marker.header = armors_msg->header;
+                            armor_marker.scale.y = (armor.type == 0) ? 0.135 : 0.23; // 根据装甲板类型调整大小
+                            armor_marker.pose = armor.pose;
+                            marker_array.markers.push_back(armor_marker);
+                            
+                            // 编号文本marker
+                            text_marker.id = marker_id++;
+                            text_marker.header = armors_msg->header;
+                            text_marker.pose.position = armor.pose.position;
+                            text_marker.pose.position.y -= 0.1; // 文本位置稍微偏移
+                            text_marker.text = armor.number;
+                            marker_array.markers.push_back(text_marker);
+                        }
+                    } else {
+                        // 如果没有检测到装甲板，发送一个DELETE action的marker清除之前的markers
+                        marker_array.markers.clear();
+                        armor_marker.action = visualization_msgs::msg::Marker::DELETE;
+                        armor_marker.id = 0;
+                        armor_marker.header = armors_msg->header;
+                        marker_array.markers.push_back(armor_marker);
+                        
+                        // 重置回ADD action以备下次使用
+                        armor_marker.action = visualization_msgs::msg::Marker::ADD;
+                    }
+                    
+                    // 发布markers
+                    marker_pub_->publish(marker_array);
                 }
-                
-                // if (!armors_msg->armors.empty()) {
-                //     armor_pnp_solver->draw_projection_points(result.frame);
-                //     cv::imshow ("Armor Projection", result.frame);
-                //     cv::waitKey(1);
-                // }
+            } catch (const cv::Exception& e) {
+                boost::lock_guard<boost::mutex> lock(cout_mutex);
+                std::cerr << "OpenCV 异常: " << e.what() << std::endl;
+
+            } catch (const std::exception& e) {
+                boost::lock_guard<boost::mutex> lock(cout_mutex);
+                std::cerr << "标准异常: " << e.what() << std::endl;
             }
         }
         
+        // 发布装甲板消息
         armors_pub_->publish(*armors_msg);
     }
 }
@@ -983,11 +1068,15 @@ int main(int argc, char* argv[]) {
     // 初始化TF2cx
     tf2_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
 
+    transform_manager = std::make_unique<SimpleTransformManager>();
+
+
 
 tf2_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
 tf2_listener = std::make_shared<tf2_ros::TransformListener>(*tf2_buffer);
 tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(*node);
-
+marker_pub_ = node->create_publisher<visualization_msgs::msg::MarkerArray>(
+    "/detector/marker", 10);
     // Print the settings that will be used
     std::cout << "Using settings:" << std::endl;
     std::cout << "  Port: " << port_name << std::endl;
