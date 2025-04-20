@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_BUILD_TYPE "Debug")
 
 if(MSVC)
     add_compile_options(/W4)
@@ -96,6 +97,10 @@ target_link_libraries(serial_example
     ${CERES_LIBRARIES}
 )
 
-ament_auto_package(
-  INSTALL_TO_SHARE
+install(DIRECTORY 
+  description
+  launch
+  DESTINATION share/${PROJECT_NAME}
 )
+
+ament_auto_package()

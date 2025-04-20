@@ -1,11 +1,26 @@
 // created by liu han on 2024/1/27
 // Submodule of HeliosRobotSystem
 // for more see document: https://swjtuhelios.feishu.cn/docx/MfCsdfRxkoYk3oxWaazcfUpTnih?from=from_copylink
-// Modified by removing ROS dependencies
-// Submodule of HeliosRobotSystem
 #include "PnPSolver.hpp"
+#include "geometry_msgs/msg/quaternion.hpp"
 
+#include <opencv2/core/quaternion.hpp>
+#include <rclcpp/logging.hpp>
 
+namespace helios_cv {
+
+cv::Quatd ros2cv(const geometry_msgs::msg::Quaternion& ros_quat) {
+    return cv::Quatd(ros_quat.w, ros_quat.x, ros_quat.y, ros_quat.z);
+}
+
+geometry_msgs::msg::Quaternion cv2ros(const cv::Quatd& cv_quat) {
+    geometry_msgs::msg::Quaternion q;
+    q.w = cv_quat.w;
+    q.x = cv_quat.x;
+    q.y = cv_quat.y;
+    q.z = cv_quat.z;
+    return q;
+}
 
 PnPSolver::PnPSolver(
     const std::array<double, 9>& camera_matrix,
@@ -18,7 +33,7 @@ PnPSolver::PnPSolver(
     double half_z {};
 
     // Start from bottom left in clockwise order
-    // Model coordinate: x forward, y left, z up
+    // Model coordinate: x forward, y le`ft, z up
     // Small armor
     // Unit: m
     half_y = small_armor_width / 2.0 / 1000.0;
@@ -38,6 +53,7 @@ PnPSolver::PnPSolver(
     large_armor_points_.emplace_back(cv::Point3f(0, -half_y, half_z));
     large_armor_points_.emplace_back(cv::Point3f(0, -half_y, -half_z));
 
+    // Unit: m
     // Unit: m
     half_y = energy_armor_width_ / 2.0 / 1000.0;
     half_z = energy_armor_height / 2.0 / 1000.0;
@@ -216,12 +232,12 @@ double ArmorProjectYaw::diff_function(double yaw) {
 
 void ArmorProjectYaw::draw_projection_points(cv::Mat& image) {
     if (projected_points_.empty()) {
-        logger_.debug("empty projection");
+        RCLCPP_DEBUG(logger_, "empty projection");
         return;
     }
     for (int i = 0; i < 4; i++) {
         cv::circle(image, projected_points_[i], i + 1, cv::Scalar(0, 0, 255), -1);
-        cv::circle(image, projected_points_[i], i + 1, cv::Scalar(255, 0, 0), 2);
+        // cv::circle(image, image_points_[i], i + 1, cv::Scalar(255, 0, 0), 2);
     }
     cv::line(image, projected_points_[0], projected_points_[2], cv::Scalar(255, 255, 0), 2);
     cv::line(image, projected_points_[1], projected_points_[3], cv::Scalar(255, 255, 0), 2);
@@ -307,7 +323,7 @@ bool ArmorProjectYaw::solve_pose(const Armor& armor, cv::Mat& rvec, cv::Mat& tve
         }
     }
     if (!is_transform_info_updated_) {
-        logger_.warn("PnP Solve done, but transform info not updated, skipping");
+        RCLCPP_WARN(logger_, "PnP Solve done, but transform info not updated, skipping");
         return true;
     }
     /*Start Reprojection*/
@@ -316,9 +332,9 @@ bool ArmorProjectYaw::solve_pose(const Armor& armor, cv::Mat& rvec, cv::Mat& tve
     armor_angle_ = armor.angle;
     // Choose pitch value
     if (armor.number == "outpost") {
-        pitch_ = -15.0 * M_PI / 180.0; // Convert to radians
+        pitch_ = angles::from_degrees(-15.0);
     } else {
-        pitch_ = 15.0 * M_PI / 180.0; // Convert to radians
+        pitch_ = angles::from_degrees(15.0);
     }
     // Get min diff yaw
     ceres::Problem problem;
@@ -479,7 +495,7 @@ bool EnergyProjectRoll::solve_pose(const Armor& armor, cv::Mat& rvec, cv::Mat& t
         }
     }
     if (!is_transform_info_updated_) {
-        logger_.warn("PnP Solve done, but transform info not updated, skipping");
+        RCLCPP_WARN(logger_, "PnP Solve done, but transform info not updated, skipping");
         return true;
     }
     /*Start Reprojection*/
@@ -517,7 +533,7 @@ bool EnergyProjectRoll::solve_pose(const Armor& armor, cv::Mat& rvec, cv::Mat& t
 
 void EnergyProjectRoll::draw_projection_points(cv::Mat& image) {
     if (projected_points_.empty()) {
-        logger_.debug("empty projection");
+        RCLCPP_DEBUG(logger_, "empty projection");
         return;
     }
     // for (int i = 0; i < 5; i++) {
@@ -549,4 +565,4 @@ void EnergyProjectRoll::set_use_projection(bool use_projection) {
 bool EnergyProjectRoll::use_projection() {
     return use_projection_;
 }
-
+} // namespace helios_cv

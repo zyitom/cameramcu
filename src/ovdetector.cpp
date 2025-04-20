@@ -175,9 +175,9 @@ std::vector<Armor> OVnetDetector::process_output(const ov::Tensor& output_tensor
     
     for (const auto& object : result) {
         // 如果是蓝色队伍检测蓝色装甲板，红色队伍检测红色装甲板
-        if ((is_blue_ && object.color != 0) || (!is_blue_ && object.color != 1)) {
-            continue;
-        }
+        // if ((is_blue_ && object.color != 0) || (!is_blue_ && object.color != 1)) {
+        //     continue;
+        // }
         
         Armor armor_target;
         armor_target.confidence = object.conf;
@@ -389,6 +389,7 @@ cv::Mat OVnetDetector::visualize_detection_result(const FrameData& frame_data) {
     }
     
     cv::imshow("Detection Points Check", vis);
+    cv::waitKey(1);
     return vis;
 }
 

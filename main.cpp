@@ -1,3 +1,5 @@
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/quaternion.hpp>
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS 
 #include <serial/serial.h>
 #include "Protocol.hpp"
@@ -44,7 +46,12 @@
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
-
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+std::shared_ptr<tf2_ros::Buffer> tf2_buffer;
+std::shared_ptr<tf2_ros::TransformListener> tf2_listener;
 rclcpp::Publisher<autoaim_interfaces::msg::Armors>::SharedPtr armors_pub_;
 rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_;
 std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
@@ -75,8 +82,8 @@ std::atomic<bool> new_gyro_available(false);
 
 // 数据结构优化：使用内存对齐且尽量避免虚拟函数以减少缓存未命中
 // 使用struct而非class，避免不必要的封装开销
-std::unique_ptr<ArmorProjectYaw> armor_pnp_solver;
-std::unique_ptr<EnergyProjectRoll> energy_pnp_solver;
+std::unique_ptr<helios_cv::ArmorProjectYaw> armor_pnp_solver;
+std::unique_ptr<helios_cv::EnergyProjectRoll> energy_pnp_solver;
 boost::mutex pnp_mutex;
 // 将int64_t时间戳(毫秒)转换为time_point
 inline std::chrono::high_resolution_clock::time_point int64ToTimePoint(int64_t timestamp_ms) {
@@ -136,10 +143,10 @@ bool initialize_pnp_solvers(const std::array<double, 9>& camera_matrix, const st
         boost::lock_guard<boost::mutex> lock(pnp_mutex);
         
 
-        armor_pnp_solver = std::make_unique<ArmorProjectYaw>(camera_matrix, dist_coeffs);
+        armor_pnp_solver = std::make_unique<helios_cv::ArmorProjectYaw>(camera_matrix, dist_coeffs);
         armor_pnp_solver->set_use_projection(true); 
         
-        energy_pnp_solver = std::make_unique<EnergyProjectRoll>(camera_matrix, dist_coeffs);
+        energy_pnp_solver = std::make_unique<helios_cv::EnergyProjectRoll>(camera_matrix, dist_coeffs);
         energy_pnp_solver->set_use_projection(true); 
         
         return true;
@@ -180,6 +187,7 @@ void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_da
             // 限制队列大小
             if (armor_pending_results.size() > MAX_PENDING_RESULTS) {
                 armor_pending_results.pop_front();
+                // std::cout << "123123" << std::endl;
             }
         }
     }
@@ -255,8 +263,8 @@ void camera_thread_func() {
                 new_frame_available.store(true, std::memory_order_release);
             }
             
-            cv::imshow("Raw Camera", frame);
-            cv::waitKey(1);
+            // cv::imshow("Raw Camera", frame);
+            // cv::waitKey(1);
             
         }
     }
@@ -271,7 +279,7 @@ void camera_thread_func() {
 
 
 
-void serial_thread_func(const std::string& port_name, int baud_rate) {
+void serial_thread_func(const std::string& port_name, int baud_rate, std::shared_ptr<rclcpp::Node> node) {
     {
         boost::lock_guard<boost::mutex> lock(cout_mutex);
         std::cout << "Opening serial port: " << port_name << " at " << baud_rate << " baud" << std::endl;
@@ -473,9 +481,57 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
                             last_is_blue = current_is_blue;
                         }
                         
+                        geometry_msgs::msg::TransformStamped ts;
+    
+                        // Create timestamp
+                        auto now = node->now();
+                        geometry_msgs::msg::TransformStamped cam_ts;
+                        cam_ts.header.frame_id = "pitch_link";
+                        cam_ts.child_frame_id = "camera_link";
+                        cam_ts.header.stamp = now;
+                        cam_ts.transform.translation.x = 0.125;
+                        cam_ts.transform.translation.y = 0.0;
+                        cam_ts.transform.translation.z = -0.035;
+                        tf2::Quaternion cam_q;
+                        cam_q.setRPY(0, 0, 0);
+                        cam_ts.transform.rotation = tf2::toMsg(cam_q);
+                        tf_broadcaster_->sendTransform(cam_ts);
+
+                        // Static transform from camera_link to camera_optical_frame
+                        geometry_msgs::msg::TransformStamped optical_ts;
+                        optical_ts.header.frame_id = "camera_link";
+                        optical_ts.child_frame_id = "camera_optical_frame";
+                        optical_ts.header.stamp = now;
+                        tf2::Quaternion optical_q;
+                        optical_q.setRPY(-M_PI/2, 0, -M_PI/2);
+                        optical_ts.transform.rotation = tf2::toMsg(optical_q);
+                        tf_broadcaster_->sendTransform(optical_ts);
+                        // odoom to yaw_link transform
+                        ts.header.frame_id = "odoom";
+                        ts.child_frame_id = "yaw_link";
+                        ts.header.stamp = now;
+                        
+                        tf2::Quaternion q;
+                        q.setRPY(0, 0, -packet.yaw);  // Note the negative sign like in CtrlBridge
+                        ts.transform.rotation = tf2::toMsg(q);
+                        tf_broadcaster_->sendTransform(ts);
+                        
+                        // yaw_link to pitch_link transform
+                        ts.header.frame_id = "yaw_link";
+                        ts.child_frame_id = "pitch_link";
+                        ts.header.stamp = now;
+                        q.setRPY(0, -packet.pitch, 0);  // Note the negative sign like in CtrlBridge
+                        ts.transform.rotation = tf2::toMsg(q);
+                        // If you have a translation parameter like in CtrlBridge, set it here
+                        // ts.transform.translation.x = your_yaw_to_pitch_translation;
+                        tf_broadcaster_->sendTransform(ts);
                         {
                             boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
-                            gyro_queue.push_back(TimestampedPacket(packet, now));
+                            auto now_ns = now.nanoseconds();
+                            auto chrono_now = std::chrono::high_resolution_clock::time_point(
+                                std::chrono::nanoseconds(now_ns));
+                            
+                            gyro_queue.push_back(TimestampedPacket(packet, chrono_now));
                             new_gyro_available.store(true, std::memory_order_release);
                         }
                     }
@@ -514,7 +570,9 @@ void serial_thread_func(const std::string& port_name, int baud_rate) {
         std::cout << "串口线程已结束" << std::endl;
     }
 }
-
+cv::Quatd ros2cv(const geometry_msgs::msg::Quaternion& q) {
+    return cv::Quatd(q.w, q.x, q.y, q.z);
+}
 void data_matching_thread_func() {
     // 等待相机初始化完成
     while (running && !camera_initialized.load(std::memory_order_acquire)) {
@@ -634,10 +692,7 @@ void data_matching_thread_func() {
 }
 
 
-// 1. Optimize the result_processing_thread_func to reduce lock contention
 void result_processing_thread_func() {
-    auto& transform_manager = helios_cv::TransformManager::getInstance();
-    
     // Pre-allocate message objects outside the loop to reduce memory allocations
     auto armors_msg = std::make_unique<autoaim_interfaces::msg::Armors>();
     
@@ -676,69 +731,127 @@ void result_processing_thread_func() {
 
         FrameData result = future.get();
 
-        transform_manager.updateGimbalAngles(
-            gyro_data.yaw,  
-            gyro_data.pitch, 
-            gyro_data.roll
-        );
+        // Convert timestamp to ROS time
+        auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(timestamp).time_since_epoch().count();
+        rclcpp::Time ros_time(timestamp_ns);
         
-        auto transform_info = helios_cv::createArmorTransformInfo();
+        // Lookup transformations using TF2
+        geometry_msgs::msg::TransformStamped ts_odom2cam, ts_cam2odom;
+        double yaw = 0.0;
+        
+        try {
+            // Get transforms from TF2 buffer
+            ts_odom2cam = tf2_buffer->lookupTransform(
+                "camera_optical_frame",
+                "odoom",
+                ros_time,
+                rclcpp::Duration::from_seconds(0.05)
+            );
+            
+            ts_cam2odom = tf2_buffer->lookupTransform(
+                "odoom",
+                "camera_optical_frame",
+                ros_time,
+                rclcpp::Duration::from_seconds(0.05)
+            );
+            
+            auto odom2yawlink = tf2_buffer->lookupTransform(
+                "yaw_link",
+                "odoom",
+                ros_time,
+                rclcpp::Duration::from_seconds(0.05)
+            );
+            
+            // Extract yaw angle
+            tf2::Quaternion q(
+                odom2yawlink.transform.rotation.x,
+                odom2yawlink.transform.rotation.y,
+                odom2yawlink.transform.rotation.z,
+                odom2yawlink.transform.rotation.w
+            );
+            tf2::Matrix3x3 m(q);
+            double roll, pitch;
+            m.getRPY(roll, pitch, yaw);
+            
+        } catch (const tf2::TransformException& ex) {
+            boost::lock_guard<boost::mutex> lock(cout_mutex);
+            std::cerr << "Error while transforming: " << ex.what() << std::endl;
+            continue;
+        }
+        
+        // Convert TF2 transforms to format needed by PnP solver
+        cv::Quatd odom2cam_rotation = ros2cv(ts_odom2cam.transform.rotation);
+        cv::Quatd cam2odom_rotation = ros2cv(ts_cam2odom.transform.rotation);
+        
+        // Create transform info with the TF2 data
+        struct helios_cv::ArmorTransformInfo armor_transform_info(cv::Quatd(1, 0, 0, 0), cv::Quatd(0, 0, 0, 0));
+        armor_transform_info.odom2cam_r = odom2cam_rotation;  // From odom to cam
+        armor_transform_info.cam2odom_r = cam2odom_rotation;
         
         armors_msg->armors.clear();
-        
-        auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(result.timestamp).time_since_epoch().count();
-        rclcpp::Time ros_time(timestamp_ns);
         armors_msg->header.stamp = ros_time;
         armors_msg->header.frame_id = "camera_optical_frame";
         
         if (result.has_valid_results()) {
             boost::lock_guard<boost::mutex> lock(pnp_mutex);
             if (armor_pnp_solver) {
-                armor_pnp_solver->update_transform_info(transform_info.get());
-                
+                // Update transform info in PnP solver using TF2 data
+                armor_pnp_solver->update_transform_info(&armor_transform_info);
+                // std::cout << "odom2cam_rotation:x=" << odom2cam_rotation.x 
+                //           << " y=" << odom2cam_rotation.y
+                //           << " z=" << odom2cam_rotation.z
+                //           << " w=" << odom2cam_rotation.w << std::endl; 
+                // std::cout << "cam2odom_rotation:x=" << cam2odom_rotation.x 
+                //           << " y=" << cam2odom_rotation.y
+                //           << " z=" << cam2odom_rotation.z
+                //           << " w=" << cam2odom_rotation.w << std::endl; 
                 for (const auto& armor : result.armors) {
                     cv::Mat rvec, tvec;
                     bool pose_solved = armor_pnp_solver->solve_pose(armor, rvec, tvec);
-                    
+                    autoaim_interfaces::msg::Armor temp_armor;
                     if (pose_solved) {
                         autoaim_interfaces::msg::Armor armor_msg;
                         
-                        armor_msg.number = armor.number;
-                        armor_msg.type = static_cast<int8_t>(armor.type);
+                        temp_armor.type = static_cast<int>(armor.type);
+                        temp_armor.number = armor.number;
 
-                        double dx = armor.center.x - result.frame.cols / 2.0;
-                        double dy = armor.center.y - result.frame.rows / 2.0;
-                        armor_msg.distance_to_image_center = std::hypot(dx, dy); 
-                        
-                        geometry_msgs::msg::Pose pose;
-                        pose.position.x = tvec.at<double>(0);
-                        pose.position.y = tvec.at<double>(1);
-                        pose.position.z = tvec.at<double>(2);
-                        
-                        double angle = cv::norm(rvec);
-                        if (angle > 1e-6) {
-                            double inv_angle = 1.0 / angle;
-                            double x = rvec.at<double>(0) * inv_angle;
-                            double y = rvec.at<double>(1) * inv_angle;
-                            double z = rvec.at<double>(2) * inv_angle;
-                            
-                            tf2::Quaternion q;
-                            q.setRotation(tf2::Vector3(x, y, z), angle);
-                            
-                            pose.orientation.x = q.x();
-                            pose.orientation.y = q.y();
-                            pose.orientation.z = q.z();
-                            pose.orientation.w = q.w();
+                        temp_armor.pose.position.x = tvec.at<double>(0);
+                        temp_armor.pose.position.y = tvec.at<double>(1);
+                        temp_armor.pose.position.z = tvec.at<double>(2);
+
+                        cv::Mat rotation_matrix;
+                        if (armor_pnp_solver->use_projection()) {
+                            rotation_matrix = rvec;
+                        } else {
+                            cv::Rodrigues(rvec, rotation_matrix);
                         }
-                        
-                        armor_msg.pose = pose;
-                        armors_msg->armors.push_back(armor_msg);
+                        tf2::Matrix3x3 tf2_rotation_matrix(
+                            rotation_matrix.at<double>(0, 0),
+                            rotation_matrix.at<double>(0, 1),
+                            rotation_matrix.at<double>(0, 2),
+                            rotation_matrix.at<double>(1, 0),
+                            rotation_matrix.at<double>(1, 1),
+                            rotation_matrix.at<double>(1, 2),
+                            rotation_matrix.at<double>(2, 0),
+                            rotation_matrix.at<double>(2, 1),
+                            rotation_matrix.at<double>(2, 2)
+                        );
+                        tf2::Quaternion tf2_quaternion;
+                        tf2_rotation_matrix.getRotation(tf2_quaternion);
+                        temp_armor.pose.orientation = tf2::toMsg(tf2_quaternion);
+                        temp_armor.distance_to_image_center =
+                        armor_pnp_solver->calculateDistanceToCenter(armor.center);
+                       
+
+                        armors_msg->armors.push_back(temp_armor);
                     }
                 }
                 
-                if (!armors_msg->armors.empty()) {
-                    armor_pnp_solver->draw_projection_points(result.frame);
-                }
+                // if (!armors_msg->armors.empty()) {
+                //     armor_pnp_solver->draw_projection_points(result.frame);
+                //     cv::imshow ("Armor Projection", result.frame);
+                //     cv::waitKey(1);
+                // }
             }
         }
         
@@ -829,44 +942,52 @@ int main(int argc, char* argv[]) {
     auto node = std::make_shared<rclcpp::Node>("helios_vision_node");
     
     // Get parameters from ROS2 if specified, otherwise use defaults
-    node->declare_parameter("port_name", port_name);
-    node->declare_parameter("baud_rate", baud_rate);
-    node->declare_parameter("model_path", model_path);
-    node->declare_parameter("device_name", device_name);
-    node->declare_parameter("calibration_file", calibration_file);
+    // node->declare_parameter("port_name", port_name);
+    // node->declare_parameter("baud_rate", baud_rate);
+    // node->declare_parameter("model_path", model_path);
+    // node->declare_parameter("device_name", device_name);
+    // node->declare_parameter("calibration_file", calibration_file);
     
-    // Only override values if they're explicitly set in the ROS 2 parameter system
-    if (node->has_parameter("port_name")) 
-        port_name = node->get_parameter("port_name").as_string();
-    if (node->has_parameter("baud_rate")) 
-        baud_rate = node->get_parameter("baud_rate").as_int();
-    if (node->has_parameter("model_path")) 
-        model_path = node->get_parameter("model_path").as_string();
-    if (node->has_parameter("device_name")) 
-        device_name = node->get_parameter("device_name").as_string();
-    if (node->has_parameter("calibration_file")) 
-        calibration_file = node->get_parameter("calibration_file").as_string();
+    // // Only override values if they're explicitly set in the ROS 2 parameter system
+    // if (node->has_parameter("port_name")) 
+    //     port_name = node->get_parameter("port_name").as_string();
+    // if (node->has_parameter("baud_rate")) 
+    //     baud_rate = node->get_parameter("baud_rate").as_int();
+    // if (node->has_parameter("model_path")) 
+    //     model_path = node->get_parameter("model_path").as_string();
+    // if (node->has_parameter("device_name")) 
+    //     device_name = node->get_parameter("device_name").as_string();
+    // if (node->has_parameter("calibration_file")) 
+    //     calibration_file = node->get_parameter("calibration_file").as_string();
     
     // Continue to support command line arguments which override everything
-    if (argc > 1) {
-        port_name = argv[1];
-    }
+    // if (argc > 1) {
+    //     port_name = argv[1];
+    // }
     
-    if (argc > 2) {
-        baud_rate = std::stoi(argv[2]);
-    }
+    // if (argc > 2) {
+    //     baud_rate = std::stoi(argv[2]);
+    // }
     
-    if (argc > 3) {
-        model_path = argv[3];
-    }
+    // if (argc > 3) {
+    //     model_path = argv[3];
+    // }
     
-    if (argc > 4) {
-        calibration_file = argv[4];
-    }
+    // if (argc > 4) {
+    //     calibration_file = argv[4];
+    // }
     armors_pub_ = node->create_publisher<autoaim_interfaces::msg::Armors>(
         "detector/armors", 
-        10
+        rclcpp::QoS(30).best_effort()  // Increased queue size, best effort delivery
     );
+    // 初始化TF2cx
+    tf2_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
+
+
+tf2_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
+tf2_listener = std::make_shared<tf2_ros::TransformListener>(*tf2_buffer);
+tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(*node);
+
     // Print the settings that will be used
     std::cout << "Using settings:" << std::endl;
     std::cout << "  Port: " << port_name << std::endl;
@@ -897,13 +1018,11 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
     
-    // 初始化坐标变换管理器
-    auto& transform_manager = helios_cv::TransformManager::getInstance();
-    transform_manager.setCameraParams();
+
     
     // 创建必要的线程
     boost::thread cam_thread(camera_thread_func);
-    boost::thread serial_thread(serial_thread_func, port_name, baud_rate);
+    boost::thread serial_thread(serial_thread_func, port_name, baud_rate, node);
     boost::thread matching_thread(data_matching_thread_func);
     boost::thread result_thread(result_processing_thread_func);  
     
@@ -935,8 +1054,14 @@ int main(int argc, char* argv[]) {
     if (result_thread.native_handle()) {
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
-        CPU_SET(2, &cpuset);
+        CPU_SET(4, &cpuset);  // Use a less busy core
+        CPU_SET(5, &cpuset);  // Add another core
         pthread_setaffinity_np(result_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
+        
+        // Set higher priority
+        struct sched_param params;
+        params.sched_priority = sched_get_priority_max(SCHED_FIFO) - 1;
+        pthread_setschedparam(result_thread.native_handle(), SCHED_FIFO, &params);
     }
     
     // Main loop to check for shutdown

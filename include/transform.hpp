@@ -75,39 +75,50 @@ private:
     
 
     void updateTransforms() {
-        Eigen::Quaterniond gimbal_to_world;
-        
         // ROS是Z轴向上，X轴向前，Y轴向左
         Eigen::AngleAxisd yaw_rotation(current_yaw_, Eigen::Vector3d::UnitZ());
         Eigen::AngleAxisd pitch_rotation(current_pitch_, Eigen::Vector3d::UnitY());
         Eigen::AngleAxisd roll_rotation(current_roll_, Eigen::Vector3d::UnitX());
         
-        // 旋转顺序很重要，通常是YXZ
-        gimbal_to_world = yaw_rotation * pitch_rotation * roll_rotation;
+        // 世界到云台的变换
+        Eigen::Quaterniond world_to_gimbal = yaw_rotation * pitch_rotation * roll_rotation;
         
-        // 相机到云台的变换
-        Eigen::Quaterniond camera_to_gimbal;
+        // 云台到相机的变换
         Eigen::AngleAxisd camera_yaw(camera_rpy_[2], Eigen::Vector3d::UnitZ());
         Eigen::AngleAxisd camera_pitch(camera_rpy_[1], Eigen::Vector3d::UnitY());
         Eigen::AngleAxisd camera_roll(camera_rpy_[0], Eigen::Vector3d::UnitX());
-        camera_to_gimbal = camera_yaw * camera_pitch * camera_roll;
+        Eigen::Quaterniond gimbal_to_camera = camera_yaw * camera_pitch * camera_roll;
         
-
-        Eigen::Quaterniond optical_to_camera;
-        // （X前，Y左，Z上）
-        optical_to_camera = 
+        // 相机到光学坐标系的变换
+        Eigen::Quaterniond camera_to_optical = 
             Eigen::AngleAxisd(-M_PI/2, Eigen::Vector3d::UnitZ()) * 
             Eigen::AngleAxisd(-M_PI/2, Eigen::Vector3d::UnitX());
         
-        Eigen::Quaterniond world_to_optical = 
-            optical_to_camera.inverse() * camera_to_gimbal.inverse() * gimbal_to_world.inverse();
+        // 计算世界到光学坐标系的完整变换链
+        Eigen::Quaterniond world_to_optical = gimbal_to_camera * world_to_gimbal;
+        world_to_optical = camera_to_optical * world_to_optical;
         
+        // 确保四元数是标准化的
+        world_to_optical.normalize();
+        
+        // 设置odom2cam四元数
         odom2cam_rotation_ = cv::Quatd(
-            world_to_optical.w(), world_to_optical.x(), 
-            world_to_optical.y(), world_to_optical.z()
+            world_to_optical.w(), 
+            world_to_optical.x(), 
+            world_to_optical.y(), 
+            world_to_optical.z()
         );
         
-        cam2odom_rotation_ = odom2cam_rotation_.conjugate();
+        // 光学坐标系到世界的变换
+        Eigen::Quaterniond optical_to_world = world_to_optical.conjugate();
+        
+        // 设置cam2odom四元数
+        cam2odom_rotation_ = cv::Quatd(
+            optical_to_world.w(),
+            optical_to_world.x(),
+            optical_to_world.y(),
+            optical_to_world.z()
+        );
     }
     
     
