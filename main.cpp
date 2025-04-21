@@ -252,6 +252,9 @@ void camera_thread_func() {
         bool hasNew = hikCam.ReadImg(frame, &device_ts, &host_ts);
         
         if (hasNew && !frame.empty()) {
+            #ifdef DEBUG
+            std::cout << " Host: " << host_ts << std::endl;
+            #endif
             if (frame_queue.empty() && !new_frame_available.load(std::memory_order_relaxed)) {
                 boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
                 frame_queue.push_back(TimestampedFrame(frame, host_ts));
@@ -459,15 +462,18 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
                     }
                     
 
-                    auto now = std::chrono::high_resolution_clock::now();
-                    
                     if (header.cmd_id == helios::RECEIVE_AUTOAIM_RECEIVE_CMD_ID && 
                         header.data_length == sizeof(helios::MCUPacket)) {
                         
                         helios::MCUPacket packet;
                         memcpy(&packet, receive_buffer.data() + sizeof(helios::FrameHeader), sizeof(helios::MCUPacket));
                         
-                        
+                        // 获取当前系统时间作为接收时间戳
+                        auto now = std::chrono::high_resolution_clock::now();
+                        #ifdef DEBUG
+                        auto now_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(now).time_since_epoch().count();
+                        std::cout << "Serial data timestamp (milliseconds): " << now_ms << std::endl;
+                        #endif
                         // 自身颜色 0 蓝 1 红
                         static bool last_is_blue = true; // 默认蓝队
                         bool current_is_blue = (packet.self_color == 1);
@@ -481,14 +487,22 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
                             last_is_blue = current_is_blue;
                         }
                         
+
+                        {
+                            boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
+                            gyro_queue.push_back(TimestampedPacket(packet, now));
+                            new_gyro_available.store(true, std::memory_order_release);
+                        }
+                        
+                        
+                        auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now).time_since_epoch().count();
+                        rclcpp::Time ros_time(timestamp_ns);
+                        // printf("Timestamp for tf: %.10ld\n", timestamp_ns);
                         geometry_msgs::msg::TransformStamped ts;
-    
-                        // Create timestamp
-                        auto now = node->now();
                         geometry_msgs::msg::TransformStamped cam_ts;
                         cam_ts.header.frame_id = "pitch_link";
                         cam_ts.child_frame_id = "camera_link";
-                        cam_ts.header.stamp = now;
+                        cam_ts.header.stamp = ros_time;
                         cam_ts.transform.translation.x = 0.125;
                         cam_ts.transform.translation.y = 0.0;
                         cam_ts.transform.translation.z = -0.035;
@@ -496,20 +510,21 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
                         cam_q.setRPY(0, 0, 0);
                         cam_ts.transform.rotation = tf2::toMsg(cam_q);
                         tf_broadcaster_->sendTransform(cam_ts);
-
+                    
                         // Static transform from camera_link to camera_optical_frame
                         geometry_msgs::msg::TransformStamped optical_ts;
                         optical_ts.header.frame_id = "camera_link";
                         optical_ts.child_frame_id = "camera_optical_frame";
-                        optical_ts.header.stamp = now;
+                        optical_ts.header.stamp = ros_time;
                         tf2::Quaternion optical_q;
                         optical_q.setRPY(-M_PI/2, 0, -M_PI/2);
                         optical_ts.transform.rotation = tf2::toMsg(optical_q);
                         tf_broadcaster_->sendTransform(optical_ts);
+                        
                         // odoom to yaw_link transform
                         ts.header.frame_id = "odoom";
                         ts.child_frame_id = "yaw_link";
-                        ts.header.stamp = now;
+                        ts.header.stamp = ros_time;
                         
                         tf2::Quaternion q;
                         q.setRPY(0, 0, -packet.yaw);  // Note the negative sign like in CtrlBridge
@@ -519,21 +534,10 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
                         // yaw_link to pitch_link transform
                         ts.header.frame_id = "yaw_link";
                         ts.child_frame_id = "pitch_link";
-                        ts.header.stamp = now;
+                        ts.header.stamp = ros_time;
                         q.setRPY(0, -packet.pitch, 0);  // Note the negative sign like in CtrlBridge
                         ts.transform.rotation = tf2::toMsg(q);
-                        // If you have a translation parameter like in CtrlBridge, set it here
-                        // ts.transform.translation.x = your_yaw_to_pitch_translation;
                         tf_broadcaster_->sendTransform(ts);
-                        {
-                            boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
-                            auto now_ns = now.nanoseconds();
-                            auto chrono_now = std::chrono::high_resolution_clock::time_point(
-                                std::chrono::nanoseconds(now_ns));
-                            
-                            gyro_queue.push_back(TimestampedPacket(packet, chrono_now));
-                            new_gyro_available.store(true, std::memory_order_release);
-                        }
                     }
                     
                     receive_buffer.erase(receive_buffer.begin(), receive_buffer.begin() + total_packet_size);
@@ -612,16 +616,22 @@ void data_matching_thread_func() {
             boost::lock_guard<boost::mutex> lock2(gyro_queue_mutex);
 
             if (!frame_queue.empty() && !gyro_queue.empty()) {
+                
                 for (const auto& frame : frame_queue) {
                     for (const auto& gyro : gyro_queue) {
                         int64_t time_diff = frame.timestamp - timePointToInt64(gyro.timestamp);
-
+                        
                         if (time_diff >= TIME_MATCH_MIN_MS && time_diff <= TIME_MATCH_MAX_MS) {
                             if (std::abs(time_diff) < std::abs(best_time_diff)) {
                                 matched_frame = TimestampedFrame(frame.frame, frame.timestamp);  
                                 matched_gyro = TimestampedPacket(gyro.packet, gyro.timestamp);
                                 best_time_diff = time_diff;
                                 found_match = true;
+                                #ifdef DEBUG
+                                std::cout << "Matched pair - Frame timestamp: " << matched_frame.timestamp 
+                                << ", Gyro timestamp: " << timePointToInt64(matched_gyro.timestamp) 
+                                << ", Time difference: " << best_time_diff << "ms" << std::endl;
+                                #endif
                             }
                         }
                     }
@@ -636,7 +646,7 @@ void data_matching_thread_func() {
             //     boost::lock_guard<boost::mutex> lock(cout_mutex);
             //     std::cout << "找到匹配: 时间差 = " << best_time_diff << "ms" << std::endl;
             // }
-
+            
             process_matched_pair(matched_frame.frame, matched_gyro.packet, matched_gyro.timestamp);
 
             // 清理处理过的数据
@@ -692,6 +702,9 @@ void data_matching_thread_func() {
 }
 
 void result_processing_thread_func() {
+    // 添加切换机制的配置选项
+    bool use_tf2_transform = true; // 默认使用tf2
+    
     // 预先分配消息对象以减少内存分配
     auto armors_msg = std::make_unique<autoaim_interfaces::msg::Armors>();
     visualization_msgs::msg::MarkerArray marker_array;
@@ -762,66 +775,69 @@ void result_processing_thread_func() {
         auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(timestamp).time_since_epoch().count();
         rclcpp::Time ros_time(timestamp_ns);
         
-        // TF转换部分
-        /*
-        geometry_msgs::msg::TransformStamped ts_odom2cam, ts_cam2odom;
-        double yaw = 0.0;
         transform_manager->updateTransforms(gyro_data.yaw, gyro_data.pitch);
-        try {
-            // 从TF2缓冲区获取变换
-            ts_odom2cam = tf2_buffer->lookupTransform(
-                "camera_optical_frame",
-                "odoom",
-                ros_time,
-                rclcpp::Duration::from_seconds(0.05)
-            );
-            
-            ts_cam2odom = tf2_buffer->lookupTransform(
-                "odoom",
-                "camera_optical_frame",
-                ros_time,
-                rclcpp::Duration::from_seconds(0.05)
-            );
-            
-            auto odom2yawlink = tf2_buffer->lookupTransform(
-                "yaw_link",
-                "odoom",
-                ros_time,
-                rclcpp::Duration::from_seconds(0.05)
-            );
-            
-            // 提取yaw角度
-            tf2::Quaternion q(
-                odom2yawlink.transform.rotation.x,
-                odom2yawlink.transform.rotation.y,
-                odom2yawlink.transform.rotation.z,
-                odom2yawlink.transform.rotation.w
-            );
-            tf2::Matrix3x3 m(q);
-            double roll, pitch;
-            m.getRPY(roll, pitch, yaw);
-            
-        } catch (const tf2::TransformException& ex) {
-            boost::lock_guard<boost::mutex> lock(cout_mutex);
-            std::cerr << "Error while transforming: " << ex.what() << std::endl;
-            continue;
-        }
-        cv::Quatd transform_odom2cam_rotation;
-        cv::Vec3d transform_odom2cam_translation;
-        cv::Quatd transform_cam2odom_rotation;
-        cv::Vec3d transform_cam2odom_translation;
-        transform_manager->getOdom2Cam(transform_odom2cam_rotation, transform_odom2cam_translation);
-        transform_manager->getCam2Odom(transform_cam2odom_rotation, transform_cam2odom_translation);
-
-        // 转换TF2变换为PnP求解器需要的格式
-        cv::Quatd odom2cam_rotation = ros2cv(ts_odom2cam.transform.rotation);
-        cv::Quatd cam2odom_rotation = ros2cv(ts_cam2odom.transform.rotation);
         
-        // 使用TF2数据创建变换信息
-        struct helios_cv::ArmorTransformInfo armor_transform_info(cv::Quatd(1, 0, 0, 0), cv::Quatd(0, 0, 0, 0));
-        armor_transform_info.odom2cam_r = odom2cam_rotation;  // 从odom到cam
-        armor_transform_info.cam2odom_r = cam2odom_rotation;
-        */
+        cv::Quatd odom2cam_rotation;
+        cv::Vec3d odom2cam_translation;
+        cv::Quatd cam2odom_rotation;
+        cv::Vec3d cam2odom_translation;
+        double yaw = 0.0;
+        
+        if (use_tf2_transform) {
+            geometry_msgs::msg::TransformStamped ts_odom2cam, ts_cam2odom;
+            try {
+                ts_odom2cam = tf2_buffer->lookupTransform(
+                    "camera_optical_frame",
+                    "odoom",
+                    ros_time,
+                    rclcpp::Duration::from_seconds(0.05)
+                );
+                
+                ts_cam2odom = tf2_buffer->lookupTransform(
+                    "odoom",
+                    "camera_optical_frame",
+                    ros_time,
+                    rclcpp::Duration::from_seconds(0.05)
+                );
+                
+                auto odom2yawlink = tf2_buffer->lookupTransform(
+                    "yaw_link",
+                    "odoom",
+                    ros_time,
+                    rclcpp::Duration::from_seconds(0.05)
+                );
+            
+                tf2::Quaternion q(
+                    odom2yawlink.transform.rotation.x,
+                    odom2yawlink.transform.rotation.y,
+                    odom2yawlink.transform.rotation.z,
+                    odom2yawlink.transform.rotation.w
+                );
+                tf2::Matrix3x3 m(q);
+                double roll, pitch;
+                m.getRPY(roll, pitch, yaw);
+                
+                // 转换TF2变换为OpenCV格式
+                odom2cam_rotation = ros2cv(ts_odom2cam.transform.rotation);
+                cam2odom_rotation = ros2cv(ts_cam2odom.transform.rotation);
+                
+            } catch (const tf2::TransformException& ex) {
+                boost::lock_guard<boost::mutex> lock(cout_mutex);
+                std::cerr << "Error while transforming with TF2: " << ex.what() << std::endl;
+                std::cerr << "Falling back to TransformManager..." << std::endl;
+                
+                // transform_manager->getOdom2Cam(odom2cam_rotation, odom2cam_translation);
+                // transform_manager->getCam2Odom(cam2odom_rotation, cam2odom_translation);
+            }
+        } else {
+            transform_manager->getOdom2Cam(odom2cam_rotation, odom2cam_translation);
+            transform_manager->getCam2Odom(cam2odom_rotation, cam2odom_translation);
+            
+            //TODO :get yaw
+        }
+        
+        // 使用选定的变换信息创建ArmorTransformInfo对象
+        struct helios_cv::ArmorTransformInfo armor_transform_info(odom2cam_rotation, cam2odom_rotation);
         
         armors_msg->armors.clear();
         armors_msg->header.stamp = ros_time;
@@ -831,20 +847,6 @@ void result_processing_thread_func() {
             try {
                 boost::lock_guard<boost::mutex> lock(pnp_mutex);
                 if (armor_pnp_solver) {
-                    // 更新变换矩阵
-                    transform_manager->updateTransforms(gyro_data.yaw, gyro_data.pitch);
-                    
-                    // 获取变换
-                    cv::Quatd odom2cam_rotation;
-                    cv::Vec3d odom2cam_translation;
-                    cv::Quatd cam2odom_rotation;
-                    cv::Vec3d cam2odom_translation;
-                    
-                    transform_manager->getOdom2Cam(odom2cam_rotation, odom2cam_translation);
-                    transform_manager->getCam2Odom(cam2odom_rotation, cam2odom_translation);
-                    
-                    // 创建具有有效四元数的变换信息
-                    struct helios_cv::ArmorTransformInfo armor_transform_info(odom2cam_rotation, cam2odom_rotation);
                     armor_pnp_solver->update_transform_info(&armor_transform_info);
                     
                     for (const auto& armor : result.armors) {
@@ -890,27 +892,33 @@ void result_processing_thread_func() {
                     
                     if (!armors_msg->armors.empty()) {
                         // 添加调试可视化
-                        armor_pnp_solver->draw_projection_points(result.frame);
-                        cv::imshow("Armor Projection", result.frame);
-                        cv::waitKey(1);
+                        // armor_pnp_solver->draw_projection_points(result.frame);
+                        // cv::imshow("Armor Projection", result.frame);
+                        // cv::waitKey(1);
                         
                         // 发布装甲板markers
                         marker_array.markers.clear();
                         int marker_id = 0;
-                        
                         for (const auto& armor : armors_msg->armors) {
-                            // 装甲板立方体marker
+                            auto time_now = std::chrono::high_resolution_clock::now();
+                            auto marker_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(time_now).time_since_epoch().count();
+                            rclcpp::Time ros_time(marker_ns);
+                        
                             armor_marker.id = marker_id++;
-                            armor_marker.header = armors_msg->header;
-                            armor_marker.scale.y = (armor.type == 0) ? 0.135 : 0.23; // 根据装甲板类型调整大小
+                            
+                            armor_marker.header.stamp = ros_time;
+                            armor_marker.header.frame_id = "camera_optical_frame"; 
+                            armor_marker.scale.y = (armor.type == 0) ? 0.135 : 0.23; 
                             armor_marker.pose = armor.pose;
                             marker_array.markers.push_back(armor_marker);
-                            
+                        
                             // 编号文本marker
                             text_marker.id = marker_id++;
-                            text_marker.header = armors_msg->header;
+                            // 修复：正确设置 header
+                            text_marker.header.stamp = ros_time;
+                            text_marker.header.frame_id = "camera_optical_frame"; 
                             text_marker.pose.position = armor.pose.position;
-                            text_marker.pose.position.y -= 0.1; // 文本位置稍微偏移
+                            text_marker.pose.position.y -= 0.1; 
                             text_marker.text = armor.number;
                             marker_array.markers.push_back(text_marker);
                         }
@@ -1012,9 +1020,9 @@ int main(int argc, char* argv[]) {
     int baud_rate = 921600;                 
     
     // 模型和标定文件路径
-    std::string model_path = "/home/zyi/Downloads/0405_9744.onnx"; 
+    std::string model_path = "/home/helios/Desktop/0405_9744.onnx"; 
     std::string device_name = "GPU";
-    std::string calibration_file = "/home/zyi/cs016_8mm.yaml";
+    std::string calibration_file = "/home/helios/Desktop/cs016_8mm.yaml";
     
     // Initialize ROS 2 with disabled signal handlers
     rclcpp::InitOptions init_options;
@@ -1072,11 +1080,11 @@ int main(int argc, char* argv[]) {
 
 
 
-tf2_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
-tf2_listener = std::make_shared<tf2_ros::TransformListener>(*tf2_buffer);
-tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(*node);
-marker_pub_ = node->create_publisher<visualization_msgs::msg::MarkerArray>(
-    "/detector/marker", 10);
+    tf2_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
+    tf2_listener = std::make_shared<tf2_ros::TransformListener>(*tf2_buffer);
+    tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(*node);
+    marker_pub_ = node->create_publisher<visualization_msgs::msg::MarkerArray>(
+        "/detector/marker", 10);
     // Print the settings that will be used
     std::cout << "Using settings:" << std::endl;
     std::cout << "  Port: " << port_name << std::endl;
@@ -1129,22 +1137,23 @@ marker_pub_ = node->create_publisher<visualization_msgs::msg::MarkerArray>(
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
         CPU_SET(3, &cpuset);
+        CPU_SET(4, &cpuset);
         pthread_setaffinity_np(serial_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
     }
 
     if (matching_thread.native_handle()) {
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
-        CPU_SET(0, &cpuset);
-        CPU_SET(1, &cpuset);
+        CPU_SET(5, &cpuset);
+        CPU_SET(6, &cpuset);
         pthread_setaffinity_np(matching_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
     }
 
     if (result_thread.native_handle()) {
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
-        CPU_SET(4, &cpuset);  // Use a less busy core
-        CPU_SET(5, &cpuset);  // Add another core
+        CPU_SET(7, &cpuset);  // Use a less busy core
+        CPU_SET(8, &cpuset);  // Add another core
         pthread_setaffinity_np(result_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
         
         // Set higher priority
