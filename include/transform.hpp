@@ -1,19 +1,31 @@
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/quaternion.hpp>
-#include <opencv2/calib3d.hpp>
+#include <map>
 #include <mutex>
+#include <algorithm>
+#include <chrono>
+#include <iostream>
 
-class SimpleTransformManager {
+class TimestampedTransformManager {
 private:
-    cv::Quatd cam2odom_rotation;
-    cv::Vec3d cam2odom_translation;
-    cv::Quatd odom2cam_rotation;
-    cv::Vec3d odom2cam_translation;
-    std::mutex mutex;
+    struct TransformData {
+        double yaw;
+        double pitch;
+        cv::Quatd cam2odom_rotation;
+        cv::Vec3d cam2odom_translation;
+        cv::Quatd odom2cam_rotation;
+        cv::Vec3d odom2cam_translation;
+    };
+    
+    // Store timestamp (nanoseconds) -> transform data
+    std::map<int64_t, TransformData> transform_cache;
+    mutable std::mutex mutex; // Make mutex mutable so it can be locked in const methods
+    
+    // Maximum cache size - set to 10 as requested
+    const size_t MAX_CACHE_SIZE = 10;
     
     // Helper method to rotate a vector using quaternion
-    cv::Vec3d rotateVector(const cv::Quatd& q, const cv::Vec3d& v) {
-        // Implement quaternion rotation: q * v * q^-1
+    cv::Vec3d rotateVector(const cv::Quatd& q, const cv::Vec3d& v) const {
         double w = q.w;
         cv::Vec3d u(q.x, q.y, q.z);
         
@@ -24,7 +36,7 @@ private:
     }
     
     // Helper method to convert Euler angles to quaternion
-    cv::Quatd eulerToQuaternion(double roll, double pitch, double yaw) {
+    cv::Quatd eulerToQuaternion(double roll, double pitch, double yaw) const {
         // Convert Euler angles to quaternion using the ZYX convention
         double cy = cos(yaw * 0.5);
         double sy = sin(yaw * 0.5);
@@ -42,109 +54,237 @@ private:
         return q;
     }
     
-    // Helper method to convert rotation matrix to quaternion
-    cv::Quatd matrixToQuaternion(const cv::Mat& rotMatrix) {
-        // Ensure we have a proper rotation matrix
-        CV_Assert(rotMatrix.type() == CV_64F && rotMatrix.rows == 3 && rotMatrix.cols == 3);
-        
-        // Using the algorithm from OpenCV's own implementation
-        double trace = rotMatrix.at<double>(0,0) + rotMatrix.at<double>(1,1) + rotMatrix.at<double>(2,2);
-        cv::Quatd q;
-        
-        if (trace > 0) {
-            double s = 0.5 / sqrt(trace + 1.0);
-            q.w = 0.25 / s;
-            q.x = (rotMatrix.at<double>(2,1) - rotMatrix.at<double>(1,2)) * s;
-            q.y = (rotMatrix.at<double>(0,2) - rotMatrix.at<double>(2,0)) * s;
-            q.z = (rotMatrix.at<double>(1,0) - rotMatrix.at<double>(0,1)) * s;
-        } else {
-            if (rotMatrix.at<double>(0,0) > rotMatrix.at<double>(1,1) && 
-                rotMatrix.at<double>(0,0) > rotMatrix.at<double>(2,2)) {
-                double s = 2.0 * sqrt(1.0 + rotMatrix.at<double>(0,0) - 
-                                      rotMatrix.at<double>(1,1) - rotMatrix.at<double>(2,2));
-                q.w = (rotMatrix.at<double>(2,1) - rotMatrix.at<double>(1,2)) / s;
-                q.x = 0.25 * s;
-                q.y = (rotMatrix.at<double>(0,1) + rotMatrix.at<double>(1,0)) / s;
-                q.z = (rotMatrix.at<double>(0,2) + rotMatrix.at<double>(2,0)) / s;
-            } else if (rotMatrix.at<double>(1,1) > rotMatrix.at<double>(2,2)) {
-                double s = 2.0 * sqrt(1.0 + rotMatrix.at<double>(1,1) - 
-                                      rotMatrix.at<double>(0,0) - rotMatrix.at<double>(2,2));
-                q.w = (rotMatrix.at<double>(0,2) - rotMatrix.at<double>(2,0)) / s;
-                q.x = (rotMatrix.at<double>(0,1) + rotMatrix.at<double>(1,0)) / s;
-                q.y = 0.25 * s;
-                q.z = (rotMatrix.at<double>(1,2) + rotMatrix.at<double>(2,1)) / s;
-            } else {
-                double s = 2.0 * sqrt(1.0 + rotMatrix.at<double>(2,2) - 
-                                      rotMatrix.at<double>(0,0) - rotMatrix.at<double>(1,1));
-                q.w = (rotMatrix.at<double>(1,0) - rotMatrix.at<double>(0,1)) / s;
-                q.x = (rotMatrix.at<double>(0,2) + rotMatrix.at<double>(2,0)) / s;
-                q.y = (rotMatrix.at<double>(1,2) + rotMatrix.at<double>(2,1)) / s;
-                q.z = 0.25 * s;
-            }
-        }
-        
-        return q;
-    }
-
-public:
-    SimpleTransformManager() {
-        resetTransforms();
-    }
-
-    void resetTransforms() {
-        std::lock_guard<std::mutex> lock(mutex);
-        cam2odom_rotation = cv::Quatd(1, 0, 0, 0);  // Identity quaternion
-        cam2odom_translation = cv::Vec3d(0, 0, 0);
-        odom2cam_rotation = cv::Quatd(1, 0, 0, 0);  // Identity quaternion
-        odom2cam_translation = cv::Vec3d(0, 0, 0);
-    }
-
-    // 更新变换，基于当前的偏航角和俯仰角
-    void updateTransforms(double yaw, double pitch) {
-        std::lock_guard<std::mutex> lock(mutex);
-        
-        // 固定的相机到pitch_link的变换 (来自URDF中的camera_joint)
+    // Calculate and store transforms for given yaw and pitch
+    void calculateTransforms(TransformData& data) {
+        // Fixed camera to pitch_link transform (from URDF)
         cv::Vec3d camera_translation(0.125, 0.0, -0.035);
         cv::Quatd camera_rotation(1, 0, 0, 0); // Identity quaternion
         
-        // 固定的相机光学坐标系到相机的变换 (来自URDF中的camera_optical_joint)
+        // Fixed optical frame to camera transform (from URDF)
         cv::Quatd optical_rotation = eulerToQuaternion(-M_PI/2, 0, -M_PI/2);
         
-        // 可变的yaw变换 (odoom到yaw_link)
-        cv::Quatd yaw_rotation = eulerToQuaternion(0, 0, -yaw);
+        // Variable yaw transform (odoom to yaw_link)
+        cv::Quatd yaw_rotation = eulerToQuaternion(0, 0, -data.yaw);
         
-        // 可变的pitch变换 (yaw_link到pitch_link)
-        cv::Quatd pitch_rotation = eulerToQuaternion(0, -pitch, 0);
+        // Variable pitch transform (yaw_link to pitch_link)
+        cv::Quatd pitch_rotation = eulerToQuaternion(0, -data.pitch, 0);
         
-        // 计算完整的变换链：optical_frame -> camera -> pitch -> yaw -> odom
-        // 注意：旋转的组合顺序是反的，因为我们是从相机到odom
-        cam2odom_rotation = yaw_rotation * pitch_rotation * camera_rotation * optical_rotation;
+        // Complete transform chain: optical_frame -> camera -> pitch -> yaw -> odom
+        data.cam2odom_rotation = yaw_rotation * pitch_rotation * camera_rotation * optical_rotation;
         
-        // 对于平移，先执行旋转再加上平移
+        // For translation, rotate first then add translation
         cv::Vec3d rotated_camera_translation = rotateVector(pitch_rotation, camera_translation);
-        cam2odom_translation = rotated_camera_translation;  // 实际情况下可能还需要加上yaw和pitch的平移偏移
+        data.cam2odom_translation = rotated_camera_translation;
         
-        // 计算逆变换：odom -> optical_frame
-        odom2cam_rotation.w = cam2odom_rotation.w;
-        odom2cam_rotation.x = -cam2odom_rotation.x;
-        odom2cam_rotation.y = -cam2odom_rotation.y;
-        odom2cam_rotation.z = -cam2odom_rotation.z;
+        // Calculate inverse transform: odom -> optical_frame
+        data.odom2cam_rotation.w = data.cam2odom_rotation.w;
+        data.odom2cam_rotation.x = -data.cam2odom_rotation.x;
+        data.odom2cam_rotation.y = -data.cam2odom_rotation.y;
+        data.odom2cam_rotation.z = -data.cam2odom_rotation.z;
         
-        // v' = -(q^-1 * v * q)
-        odom2cam_translation = -rotateVector(odom2cam_rotation, cam2odom_translation);
+        data.odom2cam_translation = -rotateVector(data.odom2cam_rotation, data.cam2odom_translation);
+    }
+    
+    // Clean up old entries from the cache
+    void cleanupCache() {
+        // Keep only the MAX_CACHE_SIZE most recent entries
+        if (transform_cache.size() > MAX_CACHE_SIZE) {
+            size_t to_remove = transform_cache.size() - MAX_CACHE_SIZE;
+            auto it = transform_cache.begin();
+            for (size_t i = 0; i < to_remove && it != transform_cache.end(); ++i) {
+                it = transform_cache.erase(it);
+            }
+        }
     }
 
-    // 获取相机到odom的变换
-    void getCam2Odom(cv::Quatd& rotation, cv::Vec3d& translation) {
+public:
+    TimestampedTransformManager() {}
+    
+    // Update the transform cache with new data
+    void updateTransform(int64_t timestamp_ns, double yaw, double pitch) {
         std::lock_guard<std::mutex> lock(mutex);
-        rotation = cam2odom_rotation;
-        translation = cam2odom_translation;
+        
+        // Create and calculate new transform data
+        TransformData data;
+        data.yaw = yaw;
+        data.pitch = pitch;
+        calculateTransforms(data);
+        
+        // Store in cache
+        transform_cache[timestamp_ns] = data;
+        
+        // Clean up cache to maintain size limit
+        cleanupCache();
     }
-
-    // 获取odom到相机的变换
-    void getOdom2Cam(cv::Quatd& rotation, cv::Vec3d& translation) {
+    
+    // Get camera to odom transform at specific timestamp
+    bool getCam2Odom(int64_t timestamp_ns, cv::Quatd& rotation, cv::Vec3d& translation) {
         std::lock_guard<std::mutex> lock(mutex);
-        rotation = odom2cam_rotation;
-        translation = odom2cam_translation;
+        
+        if (transform_cache.empty()) {
+            return false;
+        }
+        
+        // Exact match case
+        auto exact_match = transform_cache.find(timestamp_ns);
+        if (exact_match != transform_cache.end()) {
+            rotation = exact_match->second.cam2odom_rotation;
+            translation = exact_match->second.cam2odom_translation;
+            return true;
+        }
+        
+        // Find closest timestamp
+        auto iter_after = transform_cache.lower_bound(timestamp_ns);
+        
+        if (iter_after == transform_cache.begin()) {
+            // Requested timestamp is before earliest entry, use earliest
+            rotation = iter_after->second.cam2odom_rotation;
+            translation = iter_after->second.cam2odom_translation;
+            return true;
+        }
+        
+        if (iter_after == transform_cache.end()) {
+            // Requested timestamp is after latest entry, use latest
+            auto last = std::prev(transform_cache.end());
+            rotation = last->second.cam2odom_rotation;
+            translation = last->second.cam2odom_translation;
+            return true;
+        }
+        
+        // Use the closest timestamp (previous or next)
+        auto iter_before = std::prev(iter_after);
+        if (timestamp_ns - iter_before->first < iter_after->first - timestamp_ns) {
+            rotation = iter_before->second.cam2odom_rotation;
+            translation = iter_before->second.cam2odom_translation;
+        } else {
+            rotation = iter_after->second.cam2odom_rotation;
+            translation = iter_after->second.cam2odom_translation;
+        }
+        
+        return true;
+    }
+    
+    // Get odom to camera transform at specific timestamp
+    bool getOdom2Cam(int64_t timestamp_ns, cv::Quatd& rotation, cv::Vec3d& translation) {
+        std::lock_guard<std::mutex> lock(mutex);
+        
+        if (transform_cache.empty()) {
+            return false;
+        }
+        
+        // Exact match case
+        auto exact_match = transform_cache.find(timestamp_ns);
+        if (exact_match != transform_cache.end()) {
+            rotation = exact_match->second.odom2cam_rotation;
+            translation = exact_match->second.odom2cam_translation;
+            return true;
+        }
+        
+        // Find closest timestamp
+        auto iter_after = transform_cache.lower_bound(timestamp_ns);
+        
+        if (iter_after == transform_cache.begin()) {
+            // Requested timestamp is before earliest entry, use earliest
+            rotation = iter_after->second.odom2cam_rotation;
+            translation = iter_after->second.odom2cam_translation;
+            return true;
+        }
+        
+        if (iter_after == transform_cache.end()) {
+            // Requested timestamp is after latest entry, use latest
+            auto last = std::prev(transform_cache.end());
+            rotation = last->second.odom2cam_rotation;
+            translation = last->second.odom2cam_translation;
+            return true;
+        }
+        
+        // Use the closest timestamp (previous or next)
+        auto iter_before = std::prev(iter_after);
+        if (timestamp_ns - iter_before->first < iter_after->first - timestamp_ns) {
+            rotation = iter_before->second.odom2cam_rotation;
+            translation = iter_before->second.odom2cam_translation;
+        } else {
+            rotation = iter_after->second.odom2cam_rotation;
+            translation = iter_after->second.odom2cam_translation;
+        }
+        
+        return true;
+    }
+    
+    // Get both transforms at once (more efficient)
+    bool getTransforms(int64_t timestamp_ns, 
+                      cv::Quatd& cam2odom_rotation, cv::Vec3d& cam2odom_translation,
+                      cv::Quatd& odom2cam_rotation, cv::Vec3d& odom2cam_translation) {
+        std::lock_guard<std::mutex> lock(mutex);
+        
+        if (transform_cache.empty()) {
+            return false;
+        }
+        
+        // Exact match case
+        auto exact_match = transform_cache.find(timestamp_ns);
+        if (exact_match != transform_cache.end()) {
+            cam2odom_rotation = exact_match->second.cam2odom_rotation;
+            cam2odom_translation = exact_match->second.cam2odom_translation;
+            odom2cam_rotation = exact_match->second.odom2cam_rotation;
+            odom2cam_translation = exact_match->second.odom2cam_translation;
+            return true;
+        }
+        
+        // Find closest timestamp
+        auto iter_after = transform_cache.lower_bound(timestamp_ns);
+        
+        if (iter_after == transform_cache.begin()) {
+            // Requested timestamp is before earliest entry, use earliest
+            cam2odom_rotation = iter_after->second.cam2odom_rotation;
+            cam2odom_translation = iter_after->second.cam2odom_translation;
+            odom2cam_rotation = iter_after->second.odom2cam_rotation;
+            odom2cam_translation = iter_after->second.odom2cam_translation;
+            return true;
+        }
+        
+        if (iter_after == transform_cache.end()) {
+            // Requested timestamp is after latest entry, use latest
+            auto last = std::prev(transform_cache.end());
+            cam2odom_rotation = last->second.cam2odom_rotation;
+            cam2odom_translation = last->second.cam2odom_translation;
+            odom2cam_rotation = last->second.odom2cam_rotation;
+            odom2cam_translation = last->second.odom2cam_translation;
+            return true;
+        }
+        
+        // Use the closest timestamp (previous or next)
+        auto iter_before = std::prev(iter_after);
+        if (timestamp_ns - iter_before->first < iter_after->first - timestamp_ns) {
+            cam2odom_rotation = iter_before->second.cam2odom_rotation;
+            cam2odom_translation = iter_before->second.cam2odom_translation;
+            odom2cam_rotation = iter_before->second.odom2cam_rotation;
+            odom2cam_translation = iter_before->second.odom2cam_translation;
+        } else {
+            cam2odom_rotation = iter_after->second.cam2odom_rotation;
+            cam2odom_translation = iter_after->second.cam2odom_translation;
+            odom2cam_rotation = iter_after->second.odom2cam_rotation;
+            odom2cam_translation = iter_after->second.odom2cam_translation;
+        }
+        
+        return true;
+    }
+    
+    // Get the size of the cache
+    size_t cacheSize() const {
+        std::lock_guard<std::mutex> lock(mutex); // This works now with mutable mutex
+        return transform_cache.size();
+    }
+    
+    // Get the timestamp range in the cache
+    bool getTimestampRange(int64_t& oldest_ts, int64_t& newest_ts) const {
+        std::lock_guard<std::mutex> lock(mutex); // This works now with mutable mutex
+        if (transform_cache.empty()) {
+            return false;
+        }
+        
+        oldest_ts = transform_cache.begin()->first;
+        newest_ts = transform_cache.rbegin()->first;
+        return true;
     }
 };

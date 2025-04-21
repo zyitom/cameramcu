@@ -58,13 +58,13 @@ std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 visualization_msgs::msg::Marker armor_marker_;
 visualization_msgs::msg::Marker text_marker_;
 std::string node_namespace_;
-std::unique_ptr<SimpleTransformManager> transform_manager;
-
+std::unique_ptr<TimestampedTransformManager> transform_manager = 
+    std::make_unique<TimestampedTransformManager>();
 
 
 constexpr int MAX_QUEUE_SIZE = 10;         // 减少队列大小以降低内存占用
 constexpr float TIME_MATCH_MIN_MS = 7;     // 时间戳匹配最小值 (ms)
-constexpr float TIME_MATCH_MAX_MS = 9;     // 时间戳匹配最大值 (ms)
+constexpr float TIME_MATCH_MAX_MS = 29;     // 时间戳匹配最大值 (ms)
 constexpr size_t BUFFER_SIZE = 32;         // 串口缓冲区大小，提高为2的幂次方以优化内存对齐
 
 FrameData detector_input;
@@ -166,14 +166,24 @@ std::deque<std::tuple<std::chrono::high_resolution_clock::time_point, helios::MC
 void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_data, std::chrono::high_resolution_clock::time_point timestamp) {
     FrameData input_data(timestamp, frame);
     if(gyro_data.autoaim_mode == 0){
-    
+        auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(timestamp).time_since_epoch().count();
+    std::cout << "Processing matched pair - Timestamp: " << ts_ms 
+              << ", Autoaim mode: " << (int)gyro_data.autoaim_mode 
+              << ", Yaw: " << gyro_data.yaw 
+              << ", Pitch: " << gyro_data.pitch << std::endl;
         std::shared_future<FrameData> shared_future;
         {
             boost::lock_guard<boost::mutex> lock(detector_mutex);
             if (global_detector) {
                 // 将std::future转换为std::shared_future
+                std::cout << "Submitting frame to detector - Timestamp: " << ts_ms << std::endl;
+                
+                // 将std::future转换为std::shared_future
                 std::future<FrameData> future = global_detector->submit_frame_async(input_data);
                 shared_future = future.share();
+                
+                std::cout << "Frame submitted successfully - Timestamp: " << ts_ms << std::endl;
+                
             } else {
                 std::cerr << "Detector not initialized." << std::endl;
                 return;
@@ -183,11 +193,15 @@ void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_da
         {
             boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
             armor_pending_results.emplace_back(timestamp, gyro_data, shared_future);
-            
+            std::cout << "Added result to pending queue - Size: " << armor_pending_results.size() 
+                      << ", Timestamp: " << ts_ms << std::endl;
             // 限制队列大小
             if (armor_pending_results.size() > MAX_PENDING_RESULTS) {
+                auto dropped_ts = std::chrono::time_point_cast<std::chrono::milliseconds>(
+                    std::get<0>(armor_pending_results.front())).time_since_epoch().count();
                 armor_pending_results.pop_front();
-                // std::cout << "123123" << std::endl;
+                std::cout << "WARNING: Queue size exceeded limit, dropped result with timestamp: " 
+                          << dropped_ts << std::endl;
             }
         }
     }
@@ -496,6 +510,7 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
                         
                         
                         auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now).time_since_epoch().count();
+                        transform_manager->updateTransform(timestamp_ns, packet.yaw, packet.pitch);
                         rclcpp::Time ros_time(timestamp_ns);
                         // printf("Timestamp for tf: %.10ld\n", timestamp_ns);
                         geometry_msgs::msg::TransformStamped ts;
@@ -627,6 +642,10 @@ void data_matching_thread_func() {
                                 matched_gyro = TimestampedPacket(gyro.packet, gyro.timestamp);
                                 best_time_diff = time_diff;
                                 found_match = true;
+                                std::cout << "Matched gyro data - Yaw: " << matched_gyro.packet.yaw 
+                                << ", Pitch: " << matched_gyro.packet.pitch 
+                                << ", Mode: " << (int)matched_gyro.packet.autoaim_mode 
+                                << "time_stamp: " << timePointToInt64(matched_gyro.timestamp) << std::endl;
                                 #ifdef DEBUG
                                 std::cout << "Matched pair - Frame timestamp: " << matched_frame.timestamp 
                                 << ", Gyro timestamp: " << timePointToInt64(matched_gyro.timestamp) 
@@ -744,7 +763,11 @@ void result_processing_thread_func() {
                     armor_result_tuple = armor_pending_results.front();
                     armor_pending_results.pop_front();
                     has_result = true;
-                }
+                    
+                    auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(
+                        std::get<0>(armor_result_tuple)).time_since_epoch().count();
+                    std::cout << "Processing detection result - Timestamp: " << ts_ms 
+                              << ", Queue size: " << armor_pending_results.size() << std::endl;}
         }
         
         
@@ -757,32 +780,38 @@ void result_processing_thread_func() {
         auto& timestamp = std::get<0>(armor_result_tuple);
         auto& gyro_data = std::get<1>(armor_result_tuple);
         auto& future = std::get<2>(armor_result_tuple);
-        
+        auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(timestamp).time_since_epoch().count();
         if(gyro_data.autoaim_mode != 0) {
             continue; // 跳过非自瞄模式的数据
         }
         
         std::future_status status = future.wait_for(std::chrono::milliseconds(5));
         if (status != std::future_status::ready) {
+            std::cout << "Detection result not ready yet - Timestamp: " << ts_ms 
+                      << ", pushing back to queue" << std::endl;
             boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
             armor_pending_results.push_back(armor_result_tuple);
             continue;
         }
-
+        std::cout << "Detection result is ready - Timestamp: " << ts_ms << std::endl;
         FrameData result = future.get();
-
+        std::cout << "TRANSFORM DATA - Timestamp: " << ts_ms 
+          << ", Yaw: " << gyro_data.yaw 
+          << ", Pitch: " << gyro_data.pitch 
+          << ", Mode: " << (int)gyro_data.autoaim_mode 
+          << std::endl;
         // 转换时间戳为ROS时间
         auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(timestamp).time_since_epoch().count();
         rclcpp::Time ros_time(timestamp_ns);
         
-        transform_manager->updateTransforms(gyro_data.yaw, gyro_data.pitch);
+
         
         cv::Quatd odom2cam_rotation;
         cv::Vec3d odom2cam_translation;
         cv::Quatd cam2odom_rotation;
         cv::Vec3d cam2odom_translation;
         double yaw = 0.0;
-        
+        struct helios_cv::ArmorTransformInfo armor_transform_info(odom2cam_rotation, cam2odom_rotation);
         if (use_tf2_transform) {
             geometry_msgs::msg::TransformStamped ts_odom2cam, ts_cam2odom;
             try {
@@ -830,14 +859,20 @@ void result_processing_thread_func() {
                 // transform_manager->getCam2Odom(cam2odom_rotation, cam2odom_translation);
             }
         } else {
-            transform_manager->getOdom2Cam(odom2cam_rotation, odom2cam_translation);
-            transform_manager->getCam2Odom(cam2odom_rotation, cam2odom_translation);
+            // transform_manager->getOdom2Cam(odom2cam_rotation, odom2cam_translation);
+            // transform_manager->getCam2Odom(cam2odom_rotation, cam2odom_translation);
+            bool transform_success = transform_manager->getTransforms(
+                timestamp_ns,
+                cam2odom_rotation, cam2odom_translation,
+                odom2cam_rotation, odom2cam_translation
+            );
             
+            if (transform_success) {
+                helios_cv::ArmorTransformInfo armor_transform_info(odom2cam_rotation, cam2odom_rotation);
+                armor_pnp_solver->update_transform_info(&armor_transform_info);
             //TODO :get yaw
+            }
         }
-        
-        // 使用选定的变换信息创建ArmorTransformInfo对象
-        struct helios_cv::ArmorTransformInfo armor_transform_info(odom2cam_rotation, cam2odom_rotation);
         
         armors_msg->armors.clear();
         armors_msg->header.stamp = ros_time;
@@ -847,7 +882,13 @@ void result_processing_thread_func() {
             try {
                 boost::lock_guard<boost::mutex> lock(pnp_mutex);
                 if (armor_pnp_solver) {
-                    armor_pnp_solver->update_transform_info(&armor_transform_info);
+                    std::cout << "Processing " << result.armors.size() << " armors - Timestamp: " << ts_ms << std::endl;
+                    std::cout << "TRANSFORM DATA in has result  - Timestamp: " << ts_ms 
+                        << ", Yaw: " << gyro_data.yaw 
+                        << ", Pitch: " << gyro_data.pitch 
+                        << ", Mode: " << (int)gyro_data.autoaim_mode 
+                        
+                        << " \n "<<std::endl;
                     
                     for (const auto& armor : result.armors) {
                         cv::Mat rvec, tvec;
@@ -1020,9 +1061,9 @@ int main(int argc, char* argv[]) {
     int baud_rate = 921600;                 
     
     // 模型和标定文件路径
-    std::string model_path = "/home/helios/Desktop/0405_9744.onnx"; 
+    std::string model_path = "/home/zyi/Downloads/0405_9744.onnx"; 
     std::string device_name = "GPU";
-    std::string calibration_file = "/home/helios/Desktop/cs016_8mm.yaml";
+    std::string calibration_file = "/home/zyi/cs016_8mm.yaml";
     
     // Initialize ROS 2 with disabled signal handlers
     rclcpp::InitOptions init_options;
@@ -1076,7 +1117,7 @@ int main(int argc, char* argv[]) {
     // 初始化TF2cx
     tf2_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
 
-    transform_manager = std::make_unique<SimpleTransformManager>();
+    transform_manager = std::make_unique<TimestampedTransformManager>();
 
 
 
