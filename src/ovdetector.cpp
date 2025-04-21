@@ -97,38 +97,24 @@ FrameData OVnetDetector::infer_sync(const FrameData& input_data) {
         // Preprocess the frame
         ov::Tensor preprocessed = preprocess_frame(input_data.frame, input_shape_);
         
-        // Get an available inference request
-        std::unique_lock<std::mutex> lock(mutex_);
-        if (available_ireqs_.empty()) {
-            // Create a new inference request if none are available
-            auto new_ireq = compiled_model_.create_infer_request();
-            available_ireqs_.emplace_back(&new_ireq, FrameData(), false);
-        }
-        
-        auto& timed_ireq = available_ireqs_.front();
-        auto* ireq = timed_ireq.ireq;
-        available_ireqs_.pop_front();  // Remove from available queue
-        lock.unlock();
+        // Use a local inference request directly from compiled_model_ instead of the pool
+        // This avoids potential ownership issues with the ireq pointer
+        ov::InferRequest infer_request = compiled_model_.create_infer_request();
         
         // Set the input tensor for inference
-        ireq->set_input_tensor(preprocessed);
+        infer_request.set_input_tensor(preprocessed);
         
         // Start synchronous inference
-        ireq->infer();
+        infer_request.infer();
         
         // Get the output tensor
-        auto output_tensor = ireq->get_output_tensor();
+        auto output_tensor = infer_request.get_output_tensor();
         
         // Process the output to get armor detections
         std::vector<Armor> detected_armors = process_output(output_tensor);
         
         // Add results to the output frame
         result.add_armor_results(detected_armors);
-        
-        // Return the inference request to the available pool
-        lock.lock();
-        available_ireqs_.push_back(timed_ireq);
-        lock.unlock();
         
     } catch (const std::exception& e) {
         std::cerr << "Error during synchronous inference: " << e.what() << std::endl;

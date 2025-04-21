@@ -60,7 +60,8 @@ ament_auto_add_library(helios_serial SHARED ${SERIAL_SOURCES})
 
 target_include_directories(helios_serial PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+    $<INSTALL_INTERFACE:include>+
+    
     ${OpenVINO_INCLUDE_DIRS}
     ${OpenCV_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}
