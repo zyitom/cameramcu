@@ -74,6 +74,7 @@ public:
     std::pair<int, int> get_input_size() const;
     cv::Mat visualize_detection_result(const FrameData& frame_data);
     void set_is_blue(bool is_blue);
+    FrameData infer_sync(const FrameData& input_data);
 private:
     // 单次的推理请求
     struct TimedIreq {
