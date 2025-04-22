@@ -301,7 +301,7 @@ void process_detection_result(const FrameData& result, const helios::MCUPacket& 
                     armor_marker.action = visualization_msgs::msg::Marker::DELETE;
                     armor_marker.id = 0;
                     armor_marker.header = armors_msg->header;
-                    marker_array.markers.push_back(armor_marker);
+                    marker_array.markers.push_back(armor_marker); 
                     
                     // 重置回ADD action以备下次使用
                     armor_marker.action = visualization_msgs::msg::Marker::ADD;
@@ -1185,11 +1185,11 @@ int main(int argc, char* argv[]) {
     int baud_rate = 921600;                 
     
     // 模型和标定文件路径
-    // std::string model_path = "/home/zyi/Downloads/0405_9744.onnx"; 
-    std::string model_path = "/home/helios/Desktop/0405_9744.onnx"; 
+    std::string model_path = "/home/zyi/Downloads/0405_9744.onnx"; 
+    // std::string model_path = "/home/helios/Desktop/0405_9744.onnx"; 
     std::string device_name = "GPU";
-    // std::string calibration_file = "/home/zyi/cs016_8mm.yaml";
-    std::string calibration_file = "/home/helios/Desktop/cs016_8mm.yaml";
+    std::string calibration_file = "/home/zyi/cs016_8mm.yaml";
+    // std::string calibration_file = "/home/helios/Desktop/cs016_8mm.yaml";
     
     // Initialize ROS 2 with disabled signal handlers
     rclcpp::InitOptions init_options;
