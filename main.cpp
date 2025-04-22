@@ -202,7 +202,6 @@ void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_da
                 std::cout << "Submitting frame to detector - Timestamp: " << ts_ms << std::endl;
                 std::future<FrameData> future = global_detector->submit_frame_async(input_data);
                 shared_future = future.share();
-                std::cout << "Frame submitted successfully - Timestamp: " << ts_ms << std::endl;
             } else {
                 std::cerr << "Detector not initialized." << std::endl;
                 return;
@@ -235,17 +234,13 @@ void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_da
                 ));
                 std::cout << "WARNING: No valid transform found for timestamp: " << ts_ms << std::endl;
             }
-            
-            std::cout << "Added result to pending queue - Size: " << armor_pending_results.size() 
-                      << ", Timestamp: " << ts_ms << std::endl;
+
                       
             // 限制队列大小
             if (armor_pending_results.size() > MAX_PENDING_RESULTS) {
                 auto dropped_ts = std::chrono::time_point_cast<std::chrono::milliseconds>(
                     std::get<0>(armor_pending_results.front())).time_since_epoch().count();
                 armor_pending_results.pop_front();
-                std::cout << "WARNING: Queue size exceeded limit, dropped result with timestamp: " 
-                          << dropped_ts << std::endl;
             }
         }
     }
@@ -755,7 +750,7 @@ void data_matching_thread_func() {
 
 void result_processing_thread_func() {
     // 添加切换机制的配置选项
-    bool use_tf2_transform = false; 
+    bool use_tf2_transform = true; 
     
     // 预先分配消息对象以减少内存分配
     auto armors_msg = std::make_unique<autoaim_interfaces::msg::Armors>();
@@ -808,8 +803,8 @@ void result_processing_thread_func() {
                 
                 auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(
                     std::get<0>(armor_result_tuple)).time_since_epoch().count();
-                std::cout << "Processing detection result - Timestamp: " << ts_ms 
-                          << ", Queue size: " << armor_pending_results.size() << std::endl;
+                // std::cout << "Processing detection result - Timestamp: " << ts_ms 
+                //           << ", Queue size: " << armor_pending_results.size() << std::endl;
             }
         }
         
@@ -820,10 +815,10 @@ void result_processing_thread_func() {
         
         auto& timestamp = std::get<0>(armor_result_tuple);
         auto& gyro_data = std::get<1>(armor_result_tuple);
-        auto& odom2cam_rotation = std::get<2>(armor_result_tuple);
-        auto& odom2cam_translation = std::get<3>(armor_result_tuple);
-        auto& cam2odom_rotation = std::get<4>(armor_result_tuple);
-        auto& cam2odom_translation = std::get<5>(armor_result_tuple);
+        // auto& odom2cam_rotation = std::get<2>(armor_result_tuple);
+        // auto& odom2cam_translation = std::get<3>(armor_result_tuple);
+        // auto& cam2odom_rotation = std::get<4>(armor_result_tuple);
+        // auto& cam2odom_translation = std::get<5>(armor_result_tuple);
         auto& future = std::get<6>(armor_result_tuple);
         
         auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(timestamp).time_since_epoch().count();
@@ -833,8 +828,6 @@ void result_processing_thread_func() {
         
         std::future_status status = future.wait_for(std::chrono::milliseconds(5));
         if (status != std::future_status::ready) {
-            std::cout << "Detection result not ready yet - Timestamp: " << ts_ms 
-                      << ", pushing back to queue" << std::endl;
             boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
             armor_pending_results.push_back(armor_result_tuple);
             continue;
@@ -842,23 +835,33 @@ void result_processing_thread_func() {
         
         std::cout << "Detection result is ready - Timestamp: " << ts_ms << std::endl;
         FrameData result = future.get();
-        std::cout << "TRANSFORM DATA - Timestamp: " << ts_ms 
-          << ", Yaw: " << gyro_data.yaw 
-          << ", Pitch: " << gyro_data.pitch 
-          << ", Mode: " << (int)gyro_data.autoaim_mode 
-          << std::endl;
-          
-        // 转换时间戳为ROS时间
+
         auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(timestamp).time_since_epoch().count();
         rclcpp::Time ros_time(timestamp_ns);
-        
-        // 使用缓存的变换数据，不再重新查询TF2或transform_manager
-        double yaw = gyro_data.yaw;  // 直接使用陀螺仪数据中的yaw值
+        //use timestamp transform
+        cv::Quatd odom2cam_rotation, cam2odom_rotation;
+        cv::Vec3d odom2cam_translation, cam2odom_translation;
+        bool transform_valid = transform_manager->getTransforms(
+            timestamp_ns,
+            cam2odom_rotation, cam2odom_translation,
+            odom2cam_rotation, odom2cam_translation
+        );
+        if (!transform_valid) {
+            std::cerr << "Failed to get transforms for timestamp: " << ts_ms << "ms (" << timestamp_ns << "ns)" << std::endl;
+            std::cerr << "Using default transforms instead." << std::endl;
+            
+            // Set default transforms (identity rotation, zero translation)
+            odom2cam_rotation = cv::Quatd(1, 0, 0, 0);
+            odom2cam_translation = cv::Vec3d(0, 0, 0);
+            cam2odom_rotation = cv::Quatd(1, 0, 0, 0);
+            cam2odom_translation = cv::Vec3d(0, 0, 0);
+        } else {
+            std::cout << "Successfully retrieved transforms for timestamp: " << ts_ms << "ms" << std::endl;
+        }
+        double yaw = gyro_data.yaw;  
 
-        // 创建变换信息对象
         struct helios_cv::ArmorTransformInfo armor_transform_info(odom2cam_rotation, cam2odom_rotation);
         
-        // 如果需要，仍然可以从TF2获取其他信息
         if (use_tf2_transform) {
             geometry_msgs::msg::TransformStamped ts_odom2cam, ts_cam2odom;
             try {
@@ -904,7 +907,7 @@ void result_processing_thread_func() {
             }
         }
         
-        // 更新装甲板解算器的变换信息
+   
         armor_pnp_solver->update_transform_info(&armor_transform_info);
         
         armors_msg->armors.clear();
