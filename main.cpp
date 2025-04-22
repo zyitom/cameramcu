@@ -64,7 +64,7 @@ std::unique_ptr<TimestampedTransformManager> transform_manager =
 
 constexpr int MAX_QUEUE_SIZE = 10;         // 减少队列大小以降低内存占用
 constexpr float TIME_MATCH_MIN_MS = 7;     // 时间戳匹配最小值 (ms)
-constexpr float TIME_MATCH_MAX_MS = 29;     // 时间戳匹配最大值 (ms)
+constexpr float TIME_MATCH_MAX_MS = 9;     // 时间戳匹配最大值 (ms)
 constexpr size_t BUFFER_SIZE = 32;         // 串口缓冲区大小，提高为2的幂次方以优化内存对齐
 
 FrameData detector_input;
@@ -158,32 +158,51 @@ bool initialize_pnp_solvers(const std::array<double, 9>& camera_matrix, const st
 }
 
 constexpr int MAX_PENDING_RESULTS = 5; 
-boost::mutex armor_pending_results_mutex;
 
-std::deque<std::tuple<std::chrono::high_resolution_clock::time_point, helios::MCUPacket, std::shared_future<FrameData>>> armor_pending_results;
+
+boost::mutex armor_pending_results_mutex;
+std::deque<std::tuple<
+    std::chrono::high_resolution_clock::time_point,  // 时间戳
+    helios::MCUPacket,                               // 陀螺仪数据
+    cv::Quatd,                                       // odom2cam_rotation
+    cv::Vec3d,                                       // odom2cam_translation
+    cv::Quatd,                                       // cam2odom_rotation
+    cv::Vec3d,                                       // cam2odom_translation
+    std::shared_future<FrameData>                    // 检测结果的future
+>> armor_pending_results;
 
 // 用全局异步检测函数替代原有的process_matched_pair函数
 void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_data, std::chrono::high_resolution_clock::time_point timestamp) {
+    // 在这里计算并存储变换信息
+    auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(timestamp).time_since_epoch().count();
+    
+    // 获取变换信息
+    cv::Quatd odom2cam_rotation;
+    cv::Vec3d odom2cam_translation;
+    cv::Quatd cam2odom_rotation;
+    cv::Vec3d cam2odom_translation;
+    bool transform_valid = transform_manager->getTransforms(
+        timestamp_ns,
+        cam2odom_rotation, cam2odom_translation,
+        odom2cam_rotation, odom2cam_translation
+    );
+    
     FrameData input_data(timestamp, frame);
     if(gyro_data.autoaim_mode == 0){
         auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(timestamp).time_since_epoch().count();
-    std::cout << "Processing matched pair - Timestamp: " << ts_ms 
+        std::cout << "Processing matched pair - Timestamp: " << ts_ms 
               << ", Autoaim mode: " << (int)gyro_data.autoaim_mode 
               << ", Yaw: " << gyro_data.yaw 
               << ", Pitch: " << gyro_data.pitch << std::endl;
+              
         std::shared_future<FrameData> shared_future;
         {
             boost::lock_guard<boost::mutex> lock(detector_mutex);
             if (global_detector) {
-                // 将std::future转换为std::shared_future
                 std::cout << "Submitting frame to detector - Timestamp: " << ts_ms << std::endl;
-                
-                // 将std::future转换为std::shared_future
                 std::future<FrameData> future = global_detector->submit_frame_async(input_data);
                 shared_future = future.share();
-                
                 std::cout << "Frame submitted successfully - Timestamp: " << ts_ms << std::endl;
-                
             } else {
                 std::cerr << "Detector not initialized." << std::endl;
                 return;
@@ -192,9 +211,34 @@ void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_da
         
         {
             boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
-            armor_pending_results.emplace_back(timestamp, gyro_data, shared_future);
+            // 修正 emplace_back 的用法
+            if (transform_valid) {
+                armor_pending_results.emplace_back(std::make_tuple(
+                    timestamp, 
+                    gyro_data, 
+                    odom2cam_rotation,
+                    odom2cam_translation,
+                    cam2odom_rotation,
+                    cam2odom_translation,
+                    shared_future
+                ));
+            } else {
+                // 如果变换无效，使用默认的单位变换
+                armor_pending_results.emplace_back(std::make_tuple(
+                    timestamp, 
+                    gyro_data,
+                    cv::Quatd(1, 0, 0, 0),  // 默认变换（单位四元数）
+                    cv::Vec3d(0, 0, 0),      // 默认平移（零向量）
+                    cv::Quatd(1, 0, 0, 0),
+                    cv::Vec3d(0, 0, 0),
+                    shared_future
+                ));
+                std::cout << "WARNING: No valid transform found for timestamp: " << ts_ms << std::endl;
+            }
+            
             std::cout << "Added result to pending queue - Size: " << armor_pending_results.size() 
                       << ", Timestamp: " << ts_ms << std::endl;
+                      
             // 限制队列大小
             if (armor_pending_results.size() > MAX_PENDING_RESULTS) {
                 auto dropped_ts = std::chrono::time_point_cast<std::chrono::milliseconds>(
@@ -205,22 +249,11 @@ void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_da
             }
         }
     }
-    else{
+    else {
         boost::lock_guard<boost::mutex> lock(cout_mutex);
         std::cout << "Autoaim mode is 1, skipping detection." << std::endl;
-        {
-            // boost::lock_guard<boost::mutex> lock(pending_results_mutex);
-            // //pending_results.emplace_back(armor)
-            // if (pending_results.size() > MAX_PENDING_RESULTS) {
-            //     pending_results.pop_front();
-            // }
-        }
-        //打符
-
-        
     }
 }
-
 // 相机线程函数 - 优化版
 void camera_thread_func() {
     pthread_t this_thread = pthread_self();
@@ -621,8 +654,8 @@ void data_matching_thread_func() {
 
         total_attempts++;
 
-        TimestampedFrame matched_frame;  // 初始化为默认值
-        TimestampedPacket matched_gyro;  // 初始化为默认值
+        TimestampedFrame matched_frame;  
+        TimestampedPacket matched_gyro;  
         bool found_match = false;
         int64_t best_time_diff = INT64_MAX;
 
@@ -722,7 +755,7 @@ void data_matching_thread_func() {
 
 void result_processing_thread_func() {
     // 添加切换机制的配置选项
-    bool use_tf2_transform = true; // 默认使用tf2
+    bool use_tf2_transform = false; 
     
     // 预先分配消息对象以减少内存分配
     auto armors_msg = std::make_unique<autoaim_interfaces::msg::Armors>();
@@ -754,23 +787,31 @@ void result_processing_thread_func() {
     
 
     while (running) {
-        std::tuple<std::chrono::high_resolution_clock::time_point, helios::MCUPacket, std::shared_future<FrameData>> armor_result_tuple;
+        std::tuple<
+            std::chrono::high_resolution_clock::time_point, 
+            helios::MCUPacket, 
+            cv::Quatd,  // odom2cam_rotation
+            cv::Vec3d,  // odom2cam_translation
+            cv::Quatd,  // cam2odom_rotation
+            cv::Vec3d,  // cam2odom_translation
+            std::shared_future<FrameData>
+        > armor_result_tuple;
+        
         bool has_result = false;
         
         {
-                boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
-                if (!armor_pending_results.empty()) {
-                    armor_result_tuple = armor_pending_results.front();
-                    armor_pending_results.pop_front();
-                    has_result = true;
-                    
-                    auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(
-                        std::get<0>(armor_result_tuple)).time_since_epoch().count();
-                    std::cout << "Processing detection result - Timestamp: " << ts_ms 
-                              << ", Queue size: " << armor_pending_results.size() << std::endl;}
+            boost::lock_guard<boost::mutex> lock(armor_pending_results_mutex);
+            if (!armor_pending_results.empty()) {
+                armor_result_tuple = armor_pending_results.front();
+                armor_pending_results.pop_front();
+                has_result = true;
+                
+                auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(
+                    std::get<0>(armor_result_tuple)).time_since_epoch().count();
+                std::cout << "Processing detection result - Timestamp: " << ts_ms 
+                          << ", Queue size: " << armor_pending_results.size() << std::endl;
+            }
         }
-        
-        
         
         if (!has_result) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -779,7 +820,12 @@ void result_processing_thread_func() {
         
         auto& timestamp = std::get<0>(armor_result_tuple);
         auto& gyro_data = std::get<1>(armor_result_tuple);
-        auto& future = std::get<2>(armor_result_tuple);
+        auto& odom2cam_rotation = std::get<2>(armor_result_tuple);
+        auto& odom2cam_translation = std::get<3>(armor_result_tuple);
+        auto& cam2odom_rotation = std::get<4>(armor_result_tuple);
+        auto& cam2odom_translation = std::get<5>(armor_result_tuple);
+        auto& future = std::get<6>(armor_result_tuple);
+        
         auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(timestamp).time_since_epoch().count();
         if(gyro_data.autoaim_mode != 0) {
             continue; // 跳过非自瞄模式的数据
@@ -793,6 +839,7 @@ void result_processing_thread_func() {
             armor_pending_results.push_back(armor_result_tuple);
             continue;
         }
+        
         std::cout << "Detection result is ready - Timestamp: " << ts_ms << std::endl;
         FrameData result = future.get();
         std::cout << "TRANSFORM DATA - Timestamp: " << ts_ms 
@@ -800,18 +847,18 @@ void result_processing_thread_func() {
           << ", Pitch: " << gyro_data.pitch 
           << ", Mode: " << (int)gyro_data.autoaim_mode 
           << std::endl;
+          
         // 转换时间戳为ROS时间
         auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(timestamp).time_since_epoch().count();
         rclcpp::Time ros_time(timestamp_ns);
         
+        // 使用缓存的变换数据，不再重新查询TF2或transform_manager
+        double yaw = gyro_data.yaw;  // 直接使用陀螺仪数据中的yaw值
 
-        
-        cv::Quatd odom2cam_rotation;
-        cv::Vec3d odom2cam_translation;
-        cv::Quatd cam2odom_rotation;
-        cv::Vec3d cam2odom_translation;
-        double yaw = 0.0;
+        // 创建变换信息对象
         struct helios_cv::ArmorTransformInfo armor_transform_info(odom2cam_rotation, cam2odom_rotation);
+        
+        // 如果需要，仍然可以从TF2获取其他信息
         if (use_tf2_transform) {
             geometry_msgs::msg::TransformStamped ts_odom2cam, ts_cam2odom;
             try {
@@ -844,35 +891,21 @@ void result_processing_thread_func() {
                 );
                 tf2::Matrix3x3 m(q);
                 double roll, pitch;
-                m.getRPY(roll, pitch, yaw);
+                m.getRPY(roll, pitch, yaw); // 获取yaw角度
                 
-                // 转换TF2变换为OpenCV格式
+                // 重新赋值变换数据（这会覆盖之前缓存的数据）
                 odom2cam_rotation = ros2cv(ts_odom2cam.transform.rotation);
                 cam2odom_rotation = ros2cv(ts_cam2odom.transform.rotation);
                 
             } catch (const tf2::TransformException& ex) {
                 boost::lock_guard<boost::mutex> lock(cout_mutex);
                 std::cerr << "Error while transforming with TF2: " << ex.what() << std::endl;
-                std::cerr << "Falling back to TransformManager..." << std::endl;
-                
-                // transform_manager->getOdom2Cam(odom2cam_rotation, odom2cam_translation);
-                // transform_manager->getCam2Odom(cam2odom_rotation, cam2odom_translation);
-            }
-        } else {
-            // transform_manager->getOdom2Cam(odom2cam_rotation, odom2cam_translation);
-            // transform_manager->getCam2Odom(cam2odom_rotation, cam2odom_translation);
-            bool transform_success = transform_manager->getTransforms(
-                timestamp_ns,
-                cam2odom_rotation, cam2odom_translation,
-                odom2cam_rotation, odom2cam_translation
-            );
-            
-            if (transform_success) {
-                helios_cv::ArmorTransformInfo armor_transform_info(odom2cam_rotation, cam2odom_rotation);
-                armor_pnp_solver->update_transform_info(&armor_transform_info);
-            //TODO :get yaw
+                std::cerr << "Using cached transforms from matching time..." << std::endl;
             }
         }
+        
+        // 更新装甲板解算器的变换信息
+        armor_pnp_solver->update_transform_info(&armor_transform_info);
         
         armors_msg->armors.clear();
         armors_msg->header.stamp = ros_time;
@@ -887,7 +920,6 @@ void result_processing_thread_func() {
                         << ", Yaw: " << gyro_data.yaw 
                         << ", Pitch: " << gyro_data.pitch 
                         << ", Mode: " << (int)gyro_data.autoaim_mode 
-                        
                         << " \n "<<std::endl;
                     
                     for (const auto& armor : result.armors) {
@@ -941,10 +973,6 @@ void result_processing_thread_func() {
                         marker_array.markers.clear();
                         int marker_id = 0;
                         for (const auto& armor : armors_msg->armors) {
-                            auto time_now = std::chrono::high_resolution_clock::now();
-                            auto marker_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(time_now).time_since_epoch().count();
-                            rclcpp::Time ros_time(marker_ns);
-                        
                             armor_marker.id = marker_id++;
                             
                             armor_marker.header.stamp = ros_time;
@@ -952,10 +980,8 @@ void result_processing_thread_func() {
                             armor_marker.scale.y = (armor.type == 0) ? 0.135 : 0.23; 
                             armor_marker.pose = armor.pose;
                             marker_array.markers.push_back(armor_marker);
-                        
-                            // 编号文本marker
+
                             text_marker.id = marker_id++;
-                            // 修复：正确设置 header
                             text_marker.header.stamp = ros_time;
                             text_marker.header.frame_id = "camera_optical_frame"; 
                             text_marker.pose.position = armor.pose.position;
