@@ -33,8 +33,10 @@ namespace camera
         CAP_PROP_OFFSETY,           //Y偏置
         CAP_PROP_TRIGGER_MODE,      //外部触发
         CAP_PROP_TRIGGER_SOURCE,    //触发源
-        CAP_PROP_LINE_SELECTOR      //触发线
-        
+        CAP_PROP_LINE_SELECTOR,      //触发线
+        CAP_PROP_LINE_MODE,
+        CAP_PROP_LINE_SOURCE,
+        CAP_PROP_STROBE_DURATION
 
     };
 
@@ -125,6 +127,9 @@ namespace camera
         int TriggerMode = 1;
         int TriggerSource = 99;
         int LineSelector = 99;
+        int LineMode;
+        int LineSource;
+        int StrobeLineDuration;
     };
 
 } // namespace camera

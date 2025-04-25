@@ -22,7 +22,7 @@ private:
     mutable std::mutex mutex; // Make mutex mutable so it can be locked in const methods
     
     // Maximum cache size - set to 10 as requested
-    const size_t MAX_CACHE_SIZE = 10;
+    const size_t MAX_CACHE_SIZE = 30;
     
     // Helper method to rotate a vector using quaternion
     cv::Vec3d rotateVector(const cv::Quatd& q, const cv::Vec3d& v) const {
@@ -117,15 +117,15 @@ public:
         cleanupCache();
     }
     
-    // Get camera to odom transform at specific timestamp
+
     bool getCam2Odom(int64_t timestamp_ns, cv::Quatd& rotation, cv::Vec3d& translation) {
         std::lock_guard<std::mutex> lock(mutex);
         
         if (transform_cache.empty()) {
+            std::cout << "Error: Transform cache is empty. No transforms available." << std::endl;
             return false;
         }
-        
-        // Exact match case
+    
         auto exact_match = transform_cache.find(timestamp_ns);
         if (exact_match != transform_cache.end()) {
             rotation = exact_match->second.cam2odom_rotation;
@@ -133,46 +133,22 @@ public:
             return true;
         }
         
-        // Find closest timestamp
-        auto iter_after = transform_cache.lower_bound(timestamp_ns);
+        std::cout << "Error: No exact transform match for timestamp " << timestamp_ns 
+                << " nanoseconds. Aborting transform lookup." << std::endl;
         
-        if (iter_after == transform_cache.begin()) {
-            // Requested timestamp is before earliest entry, use earliest
-            rotation = iter_after->second.cam2odom_rotation;
-            translation = iter_after->second.cam2odom_translation;
-            return true;
-        }
-        
-        if (iter_after == transform_cache.end()) {
-            // Requested timestamp is after latest entry, use latest
-            auto last = std::prev(transform_cache.end());
-            rotation = last->second.cam2odom_rotation;
-            translation = last->second.cam2odom_translation;
-            return true;
-        }
-        
-        // Use the closest timestamp (previous or next)
-        auto iter_before = std::prev(iter_after);
-        if (timestamp_ns - iter_before->first < iter_after->first - timestamp_ns) {
-            rotation = iter_before->second.cam2odom_rotation;
-            translation = iter_before->second.cam2odom_translation;
-        } else {
-            rotation = iter_after->second.cam2odom_rotation;
-            translation = iter_after->second.cam2odom_translation;
-        }
-        
-        return true;
+        return false;
     }
-    
-    // Get odom to camera transform at specific timestamp
+
+
     bool getOdom2Cam(int64_t timestamp_ns, cv::Quatd& rotation, cv::Vec3d& translation) {
         std::lock_guard<std::mutex> lock(mutex);
         
         if (transform_cache.empty()) {
+            std::cout << "Error: Transform cache is empty. No transforms available." << std::endl;
             return false;
         }
         
-        // Exact match case
+     
         auto exact_match = transform_cache.find(timestamp_ns);
         if (exact_match != transform_cache.end()) {
             rotation = exact_match->second.odom2cam_rotation;
@@ -180,48 +156,24 @@ public:
             return true;
         }
         
-        // Find closest timestamp
-        auto iter_after = transform_cache.lower_bound(timestamp_ns);
+        std::cout << "Error: No exact transform match for timestamp " << timestamp_ns 
+                << " nanoseconds. Aborting transform lookup." << std::endl;
         
-        if (iter_after == transform_cache.begin()) {
-            // Requested timestamp is before earliest entry, use earliest
-            rotation = iter_after->second.odom2cam_rotation;
-            translation = iter_after->second.odom2cam_translation;
-            return true;
-        }
-        
-        if (iter_after == transform_cache.end()) {
-            // Requested timestamp is after latest entry, use latest
-            auto last = std::prev(transform_cache.end());
-            rotation = last->second.odom2cam_rotation;
-            translation = last->second.odom2cam_translation;
-            return true;
-        }
-        
-        // Use the closest timestamp (previous or next)
-        auto iter_before = std::prev(iter_after);
-        if (timestamp_ns - iter_before->first < iter_after->first - timestamp_ns) {
-            rotation = iter_before->second.odom2cam_rotation;
-            translation = iter_before->second.odom2cam_translation;
-        } else {
-            rotation = iter_after->second.odom2cam_rotation;
-            translation = iter_after->second.odom2cam_translation;
-        }
-        
-        return true;
+        return false;
     }
     
-    // Get both transforms at once (more efficient)
+
     bool getTransforms(int64_t timestamp_ns, 
-                      cv::Quatd& cam2odom_rotation, cv::Vec3d& cam2odom_translation,
-                      cv::Quatd& odom2cam_rotation, cv::Vec3d& odom2cam_translation) {
+                    cv::Quatd& cam2odom_rotation, cv::Vec3d& cam2odom_translation,
+                    cv::Quatd& odom2cam_rotation, cv::Vec3d& odom2cam_translation) {
         std::lock_guard<std::mutex> lock(mutex);
         
         if (transform_cache.empty()) {
+            std::cout << "Error: Transform cache is empty. No transforms available." << std::endl;
             return false;
         }
         
-        // Exact match case
+
         auto exact_match = transform_cache.find(timestamp_ns);
         if (exact_match != transform_cache.end()) {
             cam2odom_rotation = exact_match->second.cam2odom_rotation;
@@ -231,43 +183,19 @@ public:
             return true;
         }
         
-        // Find closest timestamp
-        auto iter_after = transform_cache.lower_bound(timestamp_ns);
+
+        std::cout << "Error: No exact transform match for timestamp " << timestamp_ns 
+                << " nanoseconds. Aborting transform lookup." << std::endl;
         
-        if (iter_after == transform_cache.begin()) {
-            // Requested timestamp is before earliest entry, use earliest
-            cam2odom_rotation = iter_after->second.cam2odom_rotation;
-            cam2odom_translation = iter_after->second.cam2odom_translation;
-            odom2cam_rotation = iter_after->second.odom2cam_rotation;
-            odom2cam_translation = iter_after->second.odom2cam_translation;
-            return true;
-        }
-        
-        if (iter_after == transform_cache.end()) {
-            // Requested timestamp is after latest entry, use latest
+
+        if (!transform_cache.empty()) {
+            auto first = transform_cache.begin();
             auto last = std::prev(transform_cache.end());
-            cam2odom_rotation = last->second.cam2odom_rotation;
-            cam2odom_translation = last->second.cam2odom_translation;
-            odom2cam_rotation = last->second.odom2cam_rotation;
-            odom2cam_translation = last->second.odom2cam_translation;
-            return true;
+            std::cout << "Available timestamp range: " << first->first 
+                    << " to " << last->first << " nanoseconds" << std::endl;
         }
         
-        // Use the closest timestamp (previous or next)
-        auto iter_before = std::prev(iter_after);
-        if (timestamp_ns - iter_before->first < iter_after->first - timestamp_ns) {
-            cam2odom_rotation = iter_before->second.cam2odom_rotation;
-            cam2odom_translation = iter_before->second.cam2odom_translation;
-            odom2cam_rotation = iter_before->second.odom2cam_rotation;
-            odom2cam_translation = iter_before->second.odom2cam_translation;
-        } else {
-            cam2odom_rotation = iter_after->second.cam2odom_rotation;
-            cam2odom_translation = iter_after->second.cam2odom_translation;
-            odom2cam_rotation = iter_after->second.odom2cam_rotation;
-            odom2cam_translation = iter_after->second.odom2cam_translation;
-        }
-        
-        return true;
+        return false;
     }
     
     // Get the size of the cache

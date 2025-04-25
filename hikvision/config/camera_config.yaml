@@ -19,4 +19,7 @@ BalanceRatio_Green: 1024
 BalanceRatio_Blue: 2150
 TriggerMode: 1
 TriggerSource: 0
-LineSelector: 99
+LineSelector: 2
+LineMode: 8       # For Strobe
+LineSource: 1     #
+StrobeLineDuration: 1

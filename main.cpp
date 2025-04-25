@@ -51,6 +51,21 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
+
+typedef struct __packed {
+    uint8_t tag;            // 0x91
+    uint16_t status;        // Status word (reserved)
+    int8_t temperature;     // Module average temperature (°C)
+    float air_pressure;     // Air pressure (Pa)
+    uint32_t system_time;   // System time (ms)
+    float acc_b[3];         // Calibrated acceleration XYZ (G)
+    float gyr_b[3];         // Calibrated angular velocity XYZ (deg/s)
+    float mag_b[3];         // Magnetic field XYZ (uT)
+    float roll;             // Roll angle (deg)
+    float pitch;            // Pitch angle (deg)
+    float yaw;              // Yaw angle (deg)
+    float quat[4];          // Quaternion WXYZ
+} HI91Packet;
 std::shared_ptr<tf2_ros::Buffer> tf2_buffer;
 std::shared_ptr<tf2_ros::TransformListener> tf2_listener;
 rclcpp::Publisher<autoaim_interfaces::msg::Armors>::SharedPtr armors_pub_;
@@ -65,8 +80,8 @@ std::unique_ptr<TimestampedTransformManager> transform_manager =
 
 constexpr int MAX_QUEUE_SIZE = 10;         // 减少队列大小以降低内存占用
 constexpr float TIME_MATCH_MIN_MS = 7;     // 时间戳匹配最小值 (ms)
-constexpr float TIME_MATCH_MAX_MS = 29;     // 时间戳匹配最大值 (ms)
-constexpr size_t BUFFER_SIZE = 32;         // 串口缓冲区大小，提高为2的幂次方以优化内存对齐
+constexpr float TIME_MATCH_MAX_MS = 7;     // 时间戳匹配最大值 (ms)
+constexpr size_t BUFFER_SIZE = 128;         // 串口缓冲区大小，提高为2的幂次方以优化内存对齐
 
 FrameData detector_input;
 // 核心状态控制
@@ -97,16 +112,16 @@ inline int64_t timePointToInt64(const std::chrono::high_resolution_clock::time_p
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         tp.time_since_epoch()).count();
 }
-struct alignas(64) TimestampedPacket {
-    helios::MCUPacket packet;
-    std::chrono::high_resolution_clock::time_point timestamp;
+// struct alignas(64) TimestampedPacket {
+//     helios::MCUPacket packet;
+//     std::chrono::high_resolution_clock::time_point timestamp;
 
-    TimestampedPacket() 
-        : packet(), timestamp(std::chrono::high_resolution_clock::time_point::min()) {}
+//     TimestampedPacket() 
+//         : packet(), timestamp(std::chrono::high_resolution_clock::time_point::min()) {}
 
-    TimestampedPacket(const helios::MCUPacket& p, std::chrono::high_resolution_clock::time_point ts_ms) 
-        : packet(p), timestamp(ts_ms) {}
-};
+//     TimestampedPacket(const helios::MCUPacket& p, std::chrono::high_resolution_clock::time_point ts_ms) 
+//         : packet(p), timestamp(ts_ms) {}
+// };
 
 struct alignas(64) TimestampedFrame {    
     cv::Mat frame;
@@ -117,7 +132,23 @@ struct alignas(64) TimestampedFrame {
 
     TimestampedFrame(const cv::Mat& f, int64_t ts) : frame(f), timestamp(ts) {}
 };
+struct alignas(64) TimestampedPacket {
+    HI91Packet packet;
+    std::chrono::high_resolution_clock::time_point timestamp;
 
+    TimestampedPacket() 
+        : packet(), timestamp(std::chrono::high_resolution_clock::time_point::min()) {}
+
+    TimestampedPacket(const HI91Packet& p, std::chrono::high_resolution_clock::time_point ts_ms) 
+        : packet(p), timestamp(ts_ms) {}
+};
+
+// Constants for the HI91 packet format
+constexpr uint8_t HI91_FRAME_HEADER_1 = 0x5A;
+constexpr uint8_t HI91_FRAME_HEADER_2 = 0xA5;
+constexpr uint8_t HI91_TAG = 0x91;
+constexpr size_t HI91_PACKET_SIZE = 76;  // Size of the data payload
+constexpr size_t HI91_FRAME_SIZE = 82;  
 
 boost::circular_buffer<TimestampedFrame> frame_queue(MAX_QUEUE_SIZE);
 boost::circular_buffer<TimestampedPacket> gyro_queue(MAX_QUEUE_SIZE);
@@ -315,12 +346,168 @@ void process_detection_result(const FrameData& result, const helios::MCUPacket& 
     armors_pub_->publish(*armors_msg);
     }
 
-    void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_data, std::chrono::high_resolution_clock::time_point timestamp) {
+
+
+// Also update the process_detection_result function to work with HI91Packet
+void process_detection_result(const FrameData& result, const HI91Packet& gyro_data, std::chrono::high_resolution_clock::time_point timestamp) {
+    auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(timestamp).time_since_epoch().count();
+    auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(timestamp).time_since_epoch().count();
+    rclcpp::Time ros_time(timestamp_ns);
+    
+    auto armors_msg = std::make_unique<autoaim_interfaces::msg::Armors>();
+    armors_msg->header.stamp = ros_time;
+    armors_msg->header.frame_id = "camera_optical_frame";
+
+    cv::Quatd cam2odom_rotation;
+    cv::Vec3d cam2odom_translation;
+    cv::Quatd odom2cam_rotation;
+    cv::Vec3d odom2cam_translation;
+    
+    bool transform_success = transform_manager->getTransforms(
+        timestamp_ns,
+        cam2odom_rotation, cam2odom_translation,
+        odom2cam_rotation, odom2cam_translation
+    );
+    
+    visualization_msgs::msg::MarkerArray marker_array;
+
+    visualization_msgs::msg::Marker armor_marker;
+    armor_marker.ns = "armors";
+    armor_marker.action = visualization_msgs::msg::Marker::ADD;
+    armor_marker.type = visualization_msgs::msg::Marker::CUBE;
+    armor_marker.scale.x = 0.05;
+    armor_marker.scale.z = 0.125;
+    armor_marker.color.a = 1.0;
+    armor_marker.color.g = 0.5;
+    armor_marker.color.b = 1.0;
+    armor_marker.lifetime = rclcpp::Duration::from_seconds(0.1);
+    
+    visualization_msgs::msg::Marker text_marker;
+    text_marker.ns = "classification";
+    text_marker.action = visualization_msgs::msg::Marker::ADD;
+    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+    text_marker.scale.z = 0.1;
+    text_marker.color.a = 1.0;
+    text_marker.color.r = 1.0;
+    text_marker.color.g = 1.0;
+    text_marker.color.b = 1.0;
+    text_marker.lifetime = rclcpp::Duration::from_seconds(0.1);
+    
+    if (result.has_valid_results()) {
+        boost::lock_guard<boost::mutex> lock(pnp_mutex);
+        if (armor_pnp_solver) {
+            std::cout << "Processing " << result.armors.size() << " armors - Timestamp: " << ts_ms << std::endl;
+            std::cout << "TRANSFORM DATA in has result - Timestamp: " << ts_ms 
+                << ", Yaw: " << gyro_data.yaw 
+                << ", Pitch: " << gyro_data.pitch
+                << ", Mode: " << ((gyro_data.status & 0x01) ? 1 : 0)  // Derive mode from status
+                << " \n " << std::endl;
+            
+            if (transform_success) {
+                helios_cv::ArmorTransformInfo armor_transform_info(odom2cam_rotation, cam2odom_rotation);
+                armor_pnp_solver->update_transform_info(&armor_transform_info);
+            }
+            
+            for (const auto& armor : result.armors) {
+                cv::Mat rvec, tvec;
+                bool pose_solved = armor_pnp_solver->solve_pose(armor, rvec, tvec);
+                
+                if (pose_solved) {
+                    autoaim_interfaces::msg::Armor armor_msg;
+                    
+                    armor_msg.type = static_cast<int>(armor.type);
+                    armor_msg.number = armor.number;
+
+                    armor_msg.pose.position.x = tvec.at<double>(0);
+                    armor_msg.pose.position.y = tvec.at<double>(1);
+                    armor_msg.pose.position.z = tvec.at<double>(2);
+
+                    cv::Mat rotation_matrix;
+                    if (armor_pnp_solver->use_projection()) {
+                        rotation_matrix = rvec;
+                    } else {
+                        cv::Rodrigues(rvec, rotation_matrix);
+                    }
+                    tf2::Matrix3x3 tf2_rotation_matrix(
+                        rotation_matrix.at<double>(0, 0),
+                        rotation_matrix.at<double>(0, 1),
+                        rotation_matrix.at<double>(0, 2),
+                        rotation_matrix.at<double>(1, 0),
+                        rotation_matrix.at<double>(1, 1),
+                        rotation_matrix.at<double>(1, 2),
+                        rotation_matrix.at<double>(2, 0),
+                        rotation_matrix.at<double>(2, 1),
+                        rotation_matrix.at<double>(2, 2)
+                    );
+                    tf2::Quaternion tf2_quaternion;
+                    tf2_rotation_matrix.getRotation(tf2_quaternion);
+                    armor_msg.pose.orientation = tf2::toMsg(tf2_quaternion);
+                    armor_msg.distance_to_image_center =
+                        armor_pnp_solver->calculateDistanceToCenter(armor.center);
+
+                    armors_msg->armors.push_back(armor_msg);
+                }
+            }
+            
+            if (!armors_msg->armors.empty()) {
+                // 发布装甲板markers
+                marker_array.markers.clear();
+                int marker_id = 0;
+                for (const auto& armor : armors_msg->armors) {
+                    auto time_now = std::chrono::high_resolution_clock::now();
+                    auto marker_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(time_now).time_since_epoch().count();
+                    rclcpp::Time marker_time(marker_ns);
+                
+                    armor_marker.id = marker_id++;
+                    
+                    armor_marker.header.stamp = marker_time;
+                    armor_marker.header.frame_id = "camera_optical_frame"; 
+                    armor_marker.scale.y = (armor.type == 0) ? 0.135 : 0.23; 
+                    armor_marker.pose = armor.pose;
+                    marker_array.markers.push_back(armor_marker);
+                
+                    // 编号文本marker
+                    text_marker.id = marker_id++;
+                    text_marker.header.stamp = marker_time;
+                    text_marker.header.frame_id = "camera_optical_frame"; 
+                    text_marker.pose.position = armor.pose.position;
+                    text_marker.pose.position.y -= 0.1; 
+                    text_marker.text = armor.number;
+                    marker_array.markers.push_back(text_marker);
+                }
+            } else {
+                // 如果没有检测到装甲板，发送一个DELETE action的marker清除之前的markers
+                marker_array.markers.clear();
+                armor_marker.action = visualization_msgs::msg::Marker::DELETE;
+                armor_marker.id = 0;
+                armor_marker.header = armors_msg->header;
+                marker_array.markers.push_back(armor_marker); 
+                
+                // 重置回ADD action以备下次使用
+                armor_marker.action = visualization_msgs::msg::Marker::ADD;
+            }
+            
+            // 发布markers
+            marker_pub_->publish(marker_array);
+        }
+    } 
+
+    armors_pub_->publish(*armors_msg);
+}
+
+
+    // Create a new process_matched_pair function that accepts HI91Packet instead of MCUPacket
+    void process_matched_pair(const cv::Mat& frame, const HI91Packet& gyro_data, std::chrono::high_resolution_clock::time_point timestamp) {
         FrameData input_data(timestamp, frame);
-        if(gyro_data.autoaim_mode == 0){
+        
+        // Determine autoaim_mode from status field (assuming bit 0 of status is autoaim_mode)
+        // You may need to adjust this based on your actual protocol specification
+        uint8_t autoaim_mode = (gyro_data.status & 0x01) ? 1 : 0;
+        
+        if(autoaim_mode == 0) {
             auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(timestamp).time_since_epoch().count();
             std::cout << "Processing matched pair - Timestamp: " << ts_ms 
-                    << ", Autoaim mode: " << (int)gyro_data.autoaim_mode 
+                    << ", Autoaim mode: " << autoaim_mode 
                     << ", Yaw: " << gyro_data.yaw 
                     << ", Pitch: " << gyro_data.pitch << std::endl;
             {
@@ -330,6 +517,7 @@ void process_detection_result(const FrameData& result, const helios::MCUPacket& 
                     
                     FrameData result = global_detector->infer_sync(input_data);
                     
+                    // Create a modified version of process_detection_result that works with HI91Packet
                     process_detection_result(result, gyro_data, timestamp);
                     
                     std::cout << "Frame processed successfully - Timestamp: " << ts_ms << std::endl;
@@ -339,10 +527,10 @@ void process_detection_result(const FrameData& result, const helios::MCUPacket& 
                 }
             }
         }
-        else{
+        else {
             boost::lock_guard<boost::mutex> lock(cout_mutex);
             std::cout << "Autoaim mode is 1, skipping detection." << std::endl;
-            //打符
+            // 打符 (energy buff targeting logic would go here)
         }
     }
 // 相机线程函数 - 优化版
@@ -416,10 +604,6 @@ void camera_thread_func() {
     }
 }
 
-
-
-
-
 void serial_thread_func(const std::string& port_name, int baud_rate, std::shared_ptr<rclcpp::Node> node) {
     {
         boost::lock_guard<boost::mutex> lock(cout_mutex);
@@ -448,7 +632,7 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
     
     // 创建数据缓冲区
     std::vector<uint8_t> receive_buffer;
-    std::vector<uint8_t> temp_buffer(BUFFER_SIZE);
+    uint8_t read_buffer[1]; // 每次只读一个字节，专注于组装帧
     
     // 打开串口的函数
     auto open_serial = [&]() -> bool {
@@ -467,23 +651,11 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
             return false;
         }
         
-
         serial_port.set_option(boost::asio::serial_port_base::baud_rate(baud_rate), ec);
         serial_port.set_option(boost::asio::serial_port_base::character_size(8), ec);
         serial_port.set_option(boost::asio::serial_port_base::parity(boost::asio::serial_port_base::parity::none), ec);
         serial_port.set_option(boost::asio::serial_port_base::stop_bits(boost::asio::serial_port_base::stop_bits::one), ec);
         serial_port.set_option(boost::asio::serial_port_base::flow_control(boost::asio::serial_port_base::flow_control::none), ec);
-        
-
-        try {
-            int fd = serial_port.native_handle();
-            int flags = fcntl(fd, F_GETFL, 0);
-            if (flags != -1) {
-                fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-            }
-        } catch (...) {
-            // 忽略设置非阻塞模式的错误
-        }
         
         return true;
     };
@@ -499,6 +671,22 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
     }
     
     last_reconnect_attempt = std::chrono::steady_clock::now();
+    
+    // 帧状态变量
+    enum FrameState {
+        WAITING_FOR_HEADER_1,
+        WAITING_FOR_HEADER_2,
+        READING_LENGTH_1,
+        READING_LENGTH_2,
+        READING_CRC_1,
+        READING_CRC_2,
+        READING_DATA
+    };
+    
+    FrameState state = WAITING_FOR_HEADER_1;
+    uint16_t data_length = 0;
+    uint16_t bytes_read_in_current_frame = 0;
+    std::vector<uint8_t> current_frame;
     
     // 主循环
     while (running) {
@@ -520,182 +708,215 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
             continue;
         }
         
-        // 尝试读取数据
+        // 读取单个字节
         boost::system::error_code error;
-        size_t bytes_read = 0;
+        size_t bytes_transferred = 0;
         
         try {
-            io_service.reset();
-            io_service.poll();
-            
-            bytes_read = serial_port.read_some(boost::asio::buffer(temp_buffer), error);
+            // 读取一个字节
+            bytes_transferred = boost::asio::read(serial_port, boost::asio::buffer(read_buffer, 1), error);
             
             if (error) {
-                if (error != boost::asio::error::would_block) {
-                    // 只在首次错误或错误类型变化时输出
-                    static boost::system::error_code last_error;
-                    if (last_error != error) {
-                        boost::lock_guard<boost::mutex> lock(cout_mutex);
-                        std::cout << "串口读取错误: " << error.message() << std::endl;
-                        last_error = error;
-                    }
-                    
-                    // 遇到严重错误，认为端口已关闭
-                    if (error == boost::asio::error::operation_aborted ||
-                        error == boost::asio::error::connection_reset ||
-                        error == boost::asio::error::eof ||
-                        error == boost::asio::error::broken_pipe) {
-                        port_open = false;
-                        continue;
-                    }
+                if (error != boost::asio::error::eof) {
+                    boost::lock_guard<boost::mutex> lock(cout_mutex);
+                    std::cout << "串口读取错误: " << error.message() << std::endl;
+                    port_open = false;
                 }
-            } else {
-                // 成功读取，重置错误计数
-                static boost::system::error_code last_error;
-                last_error = boost::system::error_code();
+                continue;
             }
             
-            if (bytes_read > 0) {
-                // 将读取的数据添加到接收缓冲区
-                size_t original_size = receive_buffer.size();
-                receive_buffer.resize(original_size + bytes_read);
-                std::copy(temp_buffer.begin(), temp_buffer.begin() + bytes_read, receive_buffer.begin() + original_size);
+            if (bytes_transferred == 1) {
+                uint8_t byte = read_buffer[0];
                 
-                // 处理缓冲区中的所有完整数据包
-                while (receive_buffer.size() >= sizeof(helios::FrameHeader)) {
-                    // 查找SOF
-                    auto sof_it = std::find(receive_buffer.begin(), receive_buffer.end(), 0xA5);
-                    if (sof_it == receive_buffer.end()) {
-                        // 没有SOF，清空缓冲区
-                        receive_buffer.clear();
+                // 基于当前状态处理字节
+                switch (state) {
+                    case WAITING_FOR_HEADER_1:
+                        if (byte == 0x5A) {
+                            current_frame.clear();
+                            current_frame.push_back(byte);
+                            state = WAITING_FOR_HEADER_2;
+                        }
                         break;
-                    }
-                    
-                    // 如果SOF不在开头，删除SOF之前的数据
-                    if (sof_it != receive_buffer.begin()) {
-                        receive_buffer.erase(receive_buffer.begin(), sof_it);
-                    }
-                    
-                    // 如果缓冲区不足以容纳一个完整的帧头，等待更多数据
-                    if (receive_buffer.size() < sizeof(helios::FrameHeader)) {
+                        
+                    case WAITING_FOR_HEADER_2:
+                        if (byte == 0xA5) {
+                            current_frame.push_back(byte);
+                            state = READING_LENGTH_1;
+                        } else {
+                            state = WAITING_FOR_HEADER_1; // 帧头不完整，重新寻找帧头
+                        }
                         break;
-                    }
-                    
-                    // 帧头
-                    helios::FrameHeader header;
-                    memcpy(&header, receive_buffer.data(), sizeof(helios::FrameHeader));
-                    
-                    // 确保数据长度在合理
-                    if (header.data_length > 1024 || header.data_length < sizeof(helios::MCUPacket)) {
-                        // 非法长度，删除SOF，继续查找下一个SOF
-                        receive_buffer.erase(receive_buffer.begin());
-                        continue;
-                    }
-                    
-                    // TODO: CRC校验
-                    size_t total_packet_size = sizeof(helios::FrameHeader) + header.data_length;
-                    if (receive_buffer.size() < total_packet_size) {
-                        // 数据不完整，等待更多数据
+                        
+                    case READING_LENGTH_1:
+                        current_frame.push_back(byte);
+                        data_length = byte; // 低字节
+                        state = READING_LENGTH_2;
                         break;
-                    }
-                    
-
-                    if (header.cmd_id == helios::RECEIVE_AUTOAIM_RECEIVE_CMD_ID && 
-                        header.data_length == sizeof(helios::MCUPacket)) {
                         
-                        helios::MCUPacket packet;
-                        memcpy(&packet, receive_buffer.data() + sizeof(helios::FrameHeader), sizeof(helios::MCUPacket));
+                    case READING_LENGTH_2:
+                        current_frame.push_back(byte);
+                        data_length |= (byte << 8); // 高字节
                         
-                        // 获取当前系统时间作为接收时间戳
-                        auto now = std::chrono::high_resolution_clock::now();
-                        #ifdef DEBUG
-                        auto now_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(now).time_since_epoch().count();
-                        std::cout << "Serial data timestamp (milliseconds): " << now_ms << std::endl;
-                        #endif
-                        // 自身颜色 0 蓝 1 红
-                        static bool last_is_blue = true; // 默认蓝队
-                        bool current_is_blue = (packet.self_color == 1);
+                        if (data_length != 76) {
+                            // 数据长度不匹配，重新寻找帧头
+                            std::cout << "Invalid data length: " << data_length << ", expected 76." << std::endl;
+                            state = WAITING_FOR_HEADER_1;
+                        } else {
+                            state = READING_CRC_1;
+                        }
+                        break;
                         
-                        // 只有当颜色发生变化时才更新检测器的颜色设置
-                        if (current_is_blue != last_is_blue) {
-                            boost::lock_guard<boost::mutex> lock(detector_mutex);
-                            if (global_detector) {
-                                global_detector->set_is_blue(current_is_blue);
+                    case READING_CRC_1:
+                        current_frame.push_back(byte);
+                        state = READING_CRC_2;
+                        break;
+                        
+                    case READING_CRC_2:
+                        current_frame.push_back(byte);
+                        bytes_read_in_current_frame = 0;
+                        state = READING_DATA;
+                        break;
+                        
+                    case READING_DATA:
+                        current_frame.push_back(byte);
+                        bytes_read_in_current_frame++;
+                        
+                        if (bytes_read_in_current_frame >= data_length) {
+                            
+                            std::cout << std::endl;
+                            
+                            // 验证TAG是否为0x91
+                            if (current_frame[6] == 0x91) {
+                                // 解析数据到HI91Packet
+                                HI91Packet packet;
+                                memset(&packet, 0, sizeof(HI91Packet));
+                                
+                                // 从帧数据填充packet
+                                packet.tag = current_frame[6];
+                                packet.status = (uint16_t)(current_frame[7] | (current_frame[8] << 8));
+                                packet.temperature = (int8_t)current_frame[9];
+                                
+                                memcpy(&packet.air_pressure, &current_frame[10], sizeof(float));
+                                memcpy(&packet.system_time, &current_frame[14], sizeof(uint32_t));
+                                
+                                memcpy(&packet.acc_b[0], &current_frame[18], sizeof(float));
+                                memcpy(&packet.acc_b[1], &current_frame[22], sizeof(float));
+                                memcpy(&packet.acc_b[2], &current_frame[26], sizeof(float));
+                                
+                                memcpy(&packet.gyr_b[0], &current_frame[30], sizeof(float));
+                                memcpy(&packet.gyr_b[1], &current_frame[34], sizeof(float));
+                                memcpy(&packet.gyr_b[2], &current_frame[38], sizeof(float));
+                                
+                                memcpy(&packet.mag_b[0], &current_frame[42], sizeof(float));
+                                memcpy(&packet.mag_b[1], &current_frame[46], sizeof(float));
+                                memcpy(&packet.mag_b[2], &current_frame[50], sizeof(float));
+                                
+                                memcpy(&packet.roll, &current_frame[54], sizeof(float));
+                                memcpy(&packet.pitch, &current_frame[58], sizeof(float));
+                                memcpy(&packet.yaw, &current_frame[62], sizeof(float));
+                                
+                                memcpy(&packet.quat[0], &current_frame[66], sizeof(float));
+                                memcpy(&packet.quat[1], &current_frame[70], sizeof(float));
+                                memcpy(&packet.quat[2], &current_frame[74], sizeof(float));
+                                memcpy(&packet.quat[3], &current_frame[78], sizeof(float));
+                                packet.roll = packet.roll * M_PI / 180.0;
+                                packet.pitch = packet.pitch * M_PI / 180.0;
+                                packet.yaw = packet.yaw * M_PI / 180.0;
+                                // 获取当前系统时间作为接收时间戳
+                                auto now = std::chrono::high_resolution_clock::now();
+                                auto now_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(now).time_since_epoch().count();
+                                
+                                std::cout << "Packet received - Timestamp: " << now_ms
+                                          << ", Tag: 0x" << std::hex << (int)packet.tag << std::dec
+                                          << ", Status: 0x" << std::hex << packet.status << std::dec
+                                          << ", Yaw: " << packet.yaw
+                                          << ", Pitch: " << packet.pitch
+                                          << ", Roll: " << packet.roll
+                                          << ", Temperature: " << (int)packet.temperature << "°C" << std::endl;
+                                
+                                // 解析status的自瞄模式位
+                                uint8_t autoaim_mode = (packet.status & 0x01);
+                                uint8_t self_color = ((packet.status & 0x02) >> 1);
+                                
+                                std::cout << "Autoaim mode: " << (int)autoaim_mode
+                                          << ", Self color: " << (int)self_color << std::endl;
+                                
+                                // 将数据包添加到队列
+                                {
+                                    boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
+                                    gyro_queue.push_back(TimestampedPacket(packet, now));
+                                    new_gyro_available.store(true, std::memory_order_release);
+                                }
+                                
+                                // 更新变换管理器
+                                auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now).time_since_epoch().count();
+                                transform_manager->updateTransform(timestamp_ns, packet.yaw, packet.pitch);
+                                
+                                // 发布TF变换
+                                rclcpp::Time ros_time(timestamp_ns);
+                                
+                                // Camera link transform
+                                geometry_msgs::msg::TransformStamped cam_ts;
+                                cam_ts.header.frame_id = "pitch_link";
+                                cam_ts.child_frame_id = "camera_link";
+                                cam_ts.header.stamp = ros_time;
+                                cam_ts.transform.translation.x = 0.125;
+                                cam_ts.transform.translation.y = 0.0;
+                                cam_ts.transform.translation.z = -0.035;
+                                tf2::Quaternion cam_q;
+                                cam_q.setRPY(0, 0, 0);
+                                cam_ts.transform.rotation = tf2::toMsg(cam_q);
+                                tf_broadcaster_->sendTransform(cam_ts);
+                                
+                                // Camera optical frame transform
+                                geometry_msgs::msg::TransformStamped optical_ts;
+                                optical_ts.header.frame_id = "camera_link";
+                                optical_ts.child_frame_id = "camera_optical_frame";
+                                optical_ts.header.stamp = ros_time;
+                                tf2::Quaternion optical_q;
+                                optical_q.setRPY(-M_PI/2, 0, -M_PI/2);
+                                optical_ts.transform.rotation = tf2::toMsg(optical_q);
+                                tf_broadcaster_->sendTransform(optical_ts);
+                                
+                                // Odom to yaw_link transform
+                                geometry_msgs::msg::TransformStamped ts;
+                                ts.header.frame_id = "odoom";
+                                ts.child_frame_id = "yaw_link";
+                                ts.header.stamp = ros_time;
+                                
+                                tf2::Quaternion q;
+                                q.setRPY(0, 0, packet.yaw);  // Note the negative sign
+                                ts.transform.rotation = tf2::toMsg(q);
+                                tf_broadcaster_->sendTransform(ts);
+                                
+                                // Yaw_link to pitch_link transform
+                                ts.header.frame_id = "yaw_link";
+                                ts.child_frame_id = "pitch_link";
+                                ts.header.stamp = ros_time;
+                                q.setRPY(0, packet.pitch, 0);  // Note the negative sign
+                                ts.transform.rotation = tf2::toMsg(q);
+                                tf_broadcaster_->sendTransform(ts);
+                            } else {
+                                std::cout << "Invalid tag: 0x" << std::hex << (int)current_frame[6] << std::dec << ", expected 0x91" << std::endl;
                             }
-                            last_is_blue = current_is_blue;
+                            
+                            // 处理完毕，重置状态
+                            state = WAITING_FOR_HEADER_1;
                         }
-                        
-
-                        {
-                            boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
-                            gyro_queue.push_back(TimestampedPacket(packet, now));
-                            new_gyro_available.store(true, std::memory_order_release);
-                        }
-                        
-                        
-                        auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now).time_since_epoch().count();
-                        transform_manager->updateTransform(timestamp_ns, packet.yaw, packet.pitch);
-                        rclcpp::Time ros_time(timestamp_ns);
-                        // printf("Timestamp for tf: %.10ld\n", timestamp_ns);
-                        geometry_msgs::msg::TransformStamped ts;
-                        geometry_msgs::msg::TransformStamped cam_ts;
-                        cam_ts.header.frame_id = "pitch_link";
-                        cam_ts.child_frame_id = "camera_link";
-                        cam_ts.header.stamp = ros_time;
-                        cam_ts.transform.translation.x = 0.125;
-                        cam_ts.transform.translation.y = 0.0;
-                        cam_ts.transform.translation.z = -0.035;
-                        tf2::Quaternion cam_q;
-                        cam_q.setRPY(0, 0, 0);
-                        cam_ts.transform.rotation = tf2::toMsg(cam_q);
-                        tf_broadcaster_->sendTransform(cam_ts);
-                    
-                        // Static transform from camera_link to camera_optical_frame
-                        geometry_msgs::msg::TransformStamped optical_ts;
-                        optical_ts.header.frame_id = "camera_link";
-                        optical_ts.child_frame_id = "camera_optical_frame";
-                        optical_ts.header.stamp = ros_time;
-                        tf2::Quaternion optical_q;
-                        optical_q.setRPY(-M_PI/2, 0, -M_PI/2);
-                        optical_ts.transform.rotation = tf2::toMsg(optical_q);
-                        tf_broadcaster_->sendTransform(optical_ts);
-                        
-                        // odoom to yaw_link transform
-                        ts.header.frame_id = "odoom";
-                        ts.child_frame_id = "yaw_link";
-                        ts.header.stamp = ros_time;
-                        
-                        tf2::Quaternion q;
-                        q.setRPY(0, 0, -packet.yaw);  // Note the negative sign like in CtrlBridge
-                        ts.transform.rotation = tf2::toMsg(q);
-                        tf_broadcaster_->sendTransform(ts);
-                        
-                        // yaw_link to pitch_link transform
-                        ts.header.frame_id = "yaw_link";
-                        ts.child_frame_id = "pitch_link";
-                        ts.header.stamp = ros_time;
-                        q.setRPY(0, -packet.pitch, 0);  // Note the negative sign like in CtrlBridge
-                        ts.transform.rotation = tf2::toMsg(q);
-                        tf_broadcaster_->sendTransform(ts);
-                    }
-                    
-                    receive_buffer.erase(receive_buffer.begin(), receive_buffer.begin() + total_packet_size);
+                        break;
                 }
             }
+        } catch (const boost::system::system_error& e) {
+            boost::lock_guard<boost::mutex> lock(cout_mutex);
+            std::cerr << "串口处理异常: " << e.what() << std::endl;
+            port_open = false;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         } catch (const std::exception& e) {
-            // 仅记录重要异常
-            static std::string last_exception;
-            if (last_exception != e.what()) {
-                boost::lock_guard<boost::mutex> lock(cout_mutex);
-                std::cerr << "串口处理异常: " << e.what() << std::endl;
-                last_exception = e.what();
-            }
-            
+            boost::lock_guard<boost::mutex> lock(cout_mutex);
+            std::cerr << "其他异常: " << e.what() << std::endl;
             port_open = false;
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-        
-        
     }
     
     // 关闭串口
@@ -704,7 +925,7 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
             boost::system::error_code close_ec;
             serial_port.close(close_ec);
         } catch (...) {
-          
+            // 忽略关闭错误
         }
     }
     
@@ -768,7 +989,6 @@ void data_matching_thread_func() {
                                 found_match = true;
                                 std::cout << "Matched gyro data - Yaw: " << matched_gyro.packet.yaw 
                                 << ", Pitch: " << matched_gyro.packet.pitch 
-                                << ", Mode: " << (int)matched_gyro.packet.autoaim_mode 
                                 << "time_stamp: " << timePointToInt64(matched_gyro.timestamp) << std::endl;
                                 #ifdef DEBUG
                                 std::cout << "Matched pair - Frame timestamp: " << matched_frame.timestamp 
@@ -846,7 +1066,7 @@ void data_matching_thread_func() {
 
 void result_processing_thread_func() {
     // 添加切换机制的配置选项
-    bool use_tf2_transform = true; // 默认使用tf2
+    bool use_tf2_transform = false; // 默认使用tf2
     
     // 预先分配消息对象以减少内存分配
     auto armors_msg = std::make_unique<autoaim_interfaces::msg::Armors>();
@@ -1064,11 +1284,7 @@ void result_processing_thread_func() {
                         // 发布装甲板markers
                         marker_array.markers.clear();
                         int marker_id = 0;
-                        for (const auto& armor : armors_msg->armors) {
-                            auto time_now = std::chrono::high_resolution_clock::now();
-                            auto marker_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(time_now).time_since_epoch().count();
-                            rclcpp::Time ros_time(marker_ns);
-                        
+                        for (const auto& armor : armors_msg->armors) {                        
                             armor_marker.id = marker_id++;
                             
                             armor_marker.header.stamp = ros_time;

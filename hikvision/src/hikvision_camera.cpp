@@ -60,6 +60,9 @@ namespace camera {
                 TriggerMode = config_file["TriggerMode"].as<int>();
                 TriggerSource = config_file["TriggerSource"].as<int>();
                 LineSelector = config_file["LineSelector"].as<int>();
+                LineMode = config_file["LineMode"].as<int>();
+                LineSource = config_file["LineSource"].as<int>();
+                StrobeLineDuration = config_file["StrobeLineDuration"].as<int>();
             }
             catch(exception &e){
                 std::cout << "\n载入相机配置文件失败, 将启用默认参数!  "<< e.what() <<"\n"<< std::endl;
@@ -139,7 +142,7 @@ namespace camera {
         // }
         
         // 设置最大传输队列深度，
-        nRet = MV_CC_SetIntValue(handle, "TransferQueueSize", 10);
+        nRet = MV_CC_SetIntValue(handle, "TransferQueueSize", 1);
         if (MV_OK != nRet) {
             printf("Set TransferQueueSize fail! nRet [0x%x]\n", nRet);
         }
@@ -151,7 +154,7 @@ namespace camera {
         }
         
         // 设置缓存节点数
-        nRet = MV_CC_SetImageNodeNum(handle, 5);
+        nRet = MV_CC_SetImageNodeNum(handle, 1);
         if (MV_OK != nRet) {
             printf("Set ImageNodeNum fail! nRet [0x%x]\n", nRet);
         }
@@ -282,6 +285,19 @@ namespace camera {
                 } else {
                     printf("Set AcquisitionFrameRateEnable Failed! nRet = [%x]\n\n", nRet);
                 }
+                // nRet = MV_CC_SetEnumValue(handle, "FrameSpecInfoSelector", 0); // Timestamp
+                // nRet = MV_CC_SetBoolValue(handle, "FrameSpecInfo", true);
+                
+                // nRet = MV_CC_SetEnumValue(handle, "FrameSpecInfoSelector", 5);//Framecounter
+	            // nRet = MV_CC_SetBoolValue(handle, "FrameSpecInfo", true);
+                // nRet = MV_CC_SetEnumValue(handle, "FrameSpecInfoSelector", 6);//Framecounter
+                // nRet = MV_CC_SetBoolValue(handle, "FrameSpecInfo", true);
+                // nRet = MV_CC_SetEnumValue(handle, "FrameSpecInfoSelector", 7);//Framecounter
+	            // nRet = MV_CC_SetBoolValue(handle, "FrameSpecInfo", true);
+
+                // if (MV_OK != nRet) {
+                //     printf("Set Timestamp watermark failed! nRet [0x%x]\n", nRet);
+                // }
                 break;
             }
             case CAP_PROP_FRAMERATE: {
@@ -471,7 +487,35 @@ namespace camera {
                     printf("Set LineSelector Failed! nRet = [%x]\n\n", nRet);
                 }
                 break;
-                
+            }    
+            case CAP_PROP_LINE_MODE: {
+                nRet = MV_CC_SetEnumValue(handle, "LineMode", value); // Set to 8 for Strobe
+                if (MV_OK == nRet) {
+                    printf("set LineMode OK! value=%f\n", value);
+                } else {
+                    printf("Set LineMode Failed! nRet = [%x]\n\n", nRet);
+                }
+                break;
+            }
+            
+            case CAP_PROP_LINE_SOURCE: {
+                nRet = MV_CC_SetEnumValue(handle, "LineSource", value); // Set to 1 for AcquisitionStartActive
+                if (MV_OK == nRet) {
+                    printf("set LineSource OK! value=%f\n", value);
+                } else {
+                    printf("Set LineSource Failed! nRet = [%x]\n\n", nRet);
+                }
+                break;
+            }
+            
+            case CAP_PROP_STROBE_DURATION: {
+                nRet = MV_CC_SetIntValue(handle, "StrobeLineDuration", (int)value); // Set to 1
+                if (MV_OK == nRet) {
+                    printf("set StrobeLineDuration OK! value=%f\n", value);
+                } else {
+                    printf("Set StrobeLineDuration Failed! nRet = [%x]\n\n", nRet);
+                }
+                break;
             }
             default:
                 return 0;
@@ -691,10 +735,24 @@ namespace camera {
             
             nRet = MV_CC_ConvertPixelType(p_handle, &stConvertParam);
             if (MV_OK == nRet) {
-                // 获取设备时间戳
+                // 获取设备时间戳（已有的代码）
                 uint64_t device_timestamp = ((uint64_t)stImageInfo.stFrameInfo.nDevTimeStampHigh << 32) | stImageInfo.stFrameInfo.nDevTimeStampLow;
                 int64_t host_timestamp = stImageInfo.stFrameInfo.nHostTimeStamp;
                 
+                // 从帧信息结构体中提取额外的水印信息
+                unsigned int frameCounter = stImageInfo.stFrameInfo.nFrameCounter;     // 帧计数器
+                unsigned int triggerIndex = stImageInfo.stFrameInfo.nTriggerIndex;     // 触发计数
+                
+                // 设备帧特定时间刻度
+                unsigned int secondCount = stImageInfo.stFrameInfo.nSecondCount;       // 秒数
+                unsigned int cycleCount = stImageInfo.stFrameInfo.nCycleCount;         // 周期数
+                unsigned int cycleOffset = stImageInfo.stFrameInfo.nCycleOffset;       // 周期偏移量
+                
+                // 其他可能有用的信息
+                float gain = stImageInfo.stFrameInfo.fGain;                           // 增益
+                float exposureTime = stImageInfo.stFrameInfo.fExposureTime;           // 曝光时间
+                
+
                 pthread_mutex_lock(&mutex);
                 camera::frame = cv::Mat(stImageInfo.stFrameInfo.nHeight, stImageInfo.stFrameInfo.nWidth, CV_8UC3, m_pBufForSaveImage);
                 camera::current_device_timestamp = device_timestamp;

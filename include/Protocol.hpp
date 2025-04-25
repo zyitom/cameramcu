@@ -48,4 +48,20 @@ typedef struct __packed
   float z;                // final predicted target z
 } MCUPacket;
 
+typedef struct __packed {
+  uint8_t tag;            // 0x91
+  uint16_t status;        // Status word (reserved)
+  int8_t temperature;     // Module average temperature (°C)
+  float air_pressure;     // Air pressure (Pa)
+  uint32_t system_time;   // System time (ms)
+  float acc_b[3];         // Calibrated acceleration XYZ (G)
+  float gyr_b[3];         // Calibrated angular velocity XYZ (deg/s)
+  float mag_b[3];         // Magnetic field XYZ (uT)
+  float roll;             // Roll angle (deg)
+  float pitch;            // Pitch angle (deg)
+  float yaw;              // Yaw angle (deg)
+  float quat[4];          // Quaternion WXYZ
+} HI91Packet;
+
+
 } // namespace helios

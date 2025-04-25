@@ -352,6 +352,7 @@ bool ArmorProjectYaw::solve_pose(const Armor& armor, cv::Mat& rvec, cv::Mat& tve
     // Caculate rotation matrix
     get_rotation_matrix(yaw, rvec);
     rvec = odom2cam_r_ * rvec;
+    is_transform_info_updated_ = false;
     return true;
 }
 
