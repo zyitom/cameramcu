@@ -470,6 +470,8 @@ namespace camera {
                 } else {
                     printf("Set LineSelector Failed! nRet = [%x]\n\n", nRet);
                 }
+                nRet =  MV_CC_SetBoolValue(handle, "ReverseX", true);
+                nRet =  MV_CC_SetBoolValue(handle, "ReverseY", true);
                 break;
                 
             }

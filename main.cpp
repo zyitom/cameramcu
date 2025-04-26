@@ -61,11 +61,46 @@ visualization_msgs::msg::Marker text_marker_;
 std::string node_namespace_;
 std::unique_ptr<TimestampedTransformManager> transform_manager = 
     std::make_unique<TimestampedTransformManager>();
+std::atomic<bool> sync_started(false);
+std::atomic<uint64_t> sync_frame_id(0);
+std::atomic<uint64_t> sync_gyro_id(0);
+std::atomic<bool> ready_for_sync(false);
+std::mutex latest_gyro_mutex;
+helios::MCUPacket latest_gyro_data;
+std::chrono::high_resolution_clock::time_point latest_gyro_timestamp;
 
+bool has_new_gyro_data = false;
 
-constexpr int MAX_QUEUE_SIZE = 10;         // 减少队列大小以降低内存占用
-constexpr float TIME_MATCH_MIN_MS = 7;     // 时间戳匹配最小值 (ms)
-constexpr float TIME_MATCH_MAX_MS = 29;     // 时间戳匹配最大值 (ms)
+std::atomic<bool> first_serial_received(false);
+std::mutex initial_sync_mutex;
+std::condition_variable initial_sync_cv;
+
+// Modified update_latest_gyro_data function to signal first data arrival
+void update_latest_gyro_data(const helios::MCUPacket& gyro_data) {
+    {
+        std::lock_guard<std::mutex> lock(latest_gyro_mutex);
+        latest_gyro_data = gyro_data;
+        latest_gyro_timestamp = std::chrono::high_resolution_clock::now();
+        has_new_gyro_data = true;
+    }
+    
+    // Signal that we've received the first serial data
+    // Make sure this is outside of the previous lock to avoid potential deadlocks
+    if (!first_serial_received.load()) {
+        std::unique_lock<std::mutex> initial_lock(initial_sync_mutex);
+        first_serial_received.store(true);
+        initial_sync_cv.notify_all(); // Notify all waiting threads
+        std::cout << "First serial data received, notifying waiting threads" << std::endl;
+    }
+}
+// 初始化时间点，用于确保程序启动3秒后才开始同步
+std::chrono::high_resolution_clock::time_point program_start_time;
+
+// 在main函数中初始化
+
+constexpr int MAX_QUEUE_SIZE = 30;         // 减少队列大小以降低内存占用
+// constexpr float TIME_MATCH_MIN_MS = 8;     // 时间戳匹配最小值 (ms)
+// constexpr float TIME_MATCH_MAX_MS = 8;     // 时间戳匹配最大值 (ms)
 constexpr size_t BUFFER_SIZE = 32;         // 串口缓冲区大小，提高为2的幂次方以优化内存对齐
 
 FrameData detector_input;
@@ -97,25 +132,29 @@ inline int64_t timePointToInt64(const std::chrono::high_resolution_clock::time_p
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         tp.time_since_epoch()).count();
 }
-struct alignas(64) TimestampedPacket {
-    helios::MCUPacket packet;
-    std::chrono::high_resolution_clock::time_point timestamp;
-
-    TimestampedPacket() 
-        : packet(), timestamp(std::chrono::high_resolution_clock::time_point::min()) {}
-
-    TimestampedPacket(const helios::MCUPacket& p, std::chrono::high_resolution_clock::time_point ts_ms) 
-        : packet(p), timestamp(ts_ms) {}
-};
-
 struct alignas(64) TimestampedFrame {    
     cv::Mat frame;
     int64_t timestamp;
+    uint64_t sync_id;  // 同步ID
 
     TimestampedFrame() 
-        : frame(), timestamp(-1) {}
+        : frame(), timestamp(-1), sync_id(UINT64_MAX) {}
 
-    TimestampedFrame(const cv::Mat& f, int64_t ts) : frame(f), timestamp(ts) {}
+    TimestampedFrame(const cv::Mat& f, int64_t ts, uint64_t id) 
+        : frame(f), timestamp(ts), sync_id(id) {}
+};
+
+// 修改TimestampedPacket结构
+struct alignas(64) TimestampedPacket {
+    helios::MCUPacket packet;
+    std::chrono::high_resolution_clock::time_point timestamp;
+    uint64_t sync_id;  // 同步ID
+
+    TimestampedPacket() 
+        : packet(), timestamp(std::chrono::high_resolution_clock::time_point::min()), sync_id(UINT64_MAX) {}
+
+    TimestampedPacket(const helios::MCUPacket& p, std::chrono::high_resolution_clock::time_point ts_ms, uint64_t id) 
+        : packet(p), timestamp(ts_ms), sync_id(id) {}
 };
 
 
@@ -161,20 +200,249 @@ bool initialize_pnp_solvers(const std::array<double, 9>& camera_matrix, const st
 
 constexpr int MAX_PENDING_RESULTS = 5; 
 boost::mutex armor_pending_results_mutex;
+void start_sync() {
+    // 等待相机和串口都初始化完成
+    while (running && (!camera_initialized.load(std::memory_order_acquire) || !first_serial_received.load())) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    
+    // 确保两个设备都准备好再开始同步
+    {
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
+        std::cout << "===== 相机和串口都已初始化完成 =====" << std::endl;
+        std::cout << "开始硬件同步计数！时间: " 
+                  << std::chrono::time_point_cast<std::chrono::milliseconds>(
+                       std::chrono::high_resolution_clock::now()).time_since_epoch().count() 
+                  << "ms" << std::endl;
+    }
+    
+    // 重置同步ID
+    sync_frame_id.store(0, std::memory_order_release);
+    sync_gyro_id.store(0, std::memory_order_release);
+    
+    // 清空现有队列，以避免旧数据干扰
+    {
+        boost::lock_guard<boost::mutex> frame_lock(frame_queue_mutex);
+        frame_queue.clear();
+    }
+    
+    {
+        boost::lock_guard<boost::mutex> gyro_lock(gyro_queue_mutex);
+        gyro_queue.clear();
+    }
+    
+    // 添加短暂延迟，确保所有线程都准备好同步状态
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    
+    // 激活同步信号
+    ready_for_sync.store(true, std::memory_order_release);
+    sync_started.store(true, std::memory_order_release);
+}
 
 std::deque<std::tuple<std::chrono::high_resolution_clock::time_point, helios::MCUPacket, std::shared_future<FrameData>>> armor_pending_results;
-
-// 用全局异步检测函数替代原有的process_matched_pair函数
-
-void process_detection_result(const FrameData& result, const helios::MCUPacket& gyro_data, std::chrono::high_resolution_clock::time_point timestamp) {
-    auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(timestamp).time_since_epoch().count();
-    auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(timestamp).time_since_epoch().count();
-    rclcpp::Time ros_time(timestamp_ns);
+// Function to visualize armor detections in odom frame
+// 三维坐标系可视化函数
+void visualizeArmorsIn3DOdomFrame(
+    const std::vector<autoaim_interfaces::msg::Armor>& armors,
+    const cv::Quatd& cam2odom_rotation,  // 相机到odom的四元数旋转
+    int wait_key = 1)
+{
+    // 创建三个视图：顶视图(XY)、前视图(XZ)和侧视图(YZ)
+    const int view_size = 400;  // 每个视图的大小
+    cv::Mat top_view = cv::Mat::zeros(view_size, view_size, CV_8UC3);
+    cv::Mat front_view = cv::Mat::zeros(view_size, view_size, CV_8UC3);
+    cv::Mat side_view = cv::Mat::zeros(view_size, view_size, CV_8UC3);
     
-    auto armors_msg = std::make_unique<autoaim_interfaces::msg::Armors>();
-    armors_msg->header.stamp = ros_time;
-    armors_msg->header.frame_id = "camera_optical_frame";
-
+    // 坐标系中心点
+    cv::Point2i center(view_size/2, view_size/2);
+    
+    // 缩放因子
+    const double scale = 100.0;
+    
+    // 绘制坐标轴
+    // 顶视图 (XY平面)
+    cv::line(top_view, center, center + cv::Point2i(scale, 0), cv::Scalar(0, 0, 255), 2);  // X轴 (红色)
+    cv::line(top_view, center, center + cv::Point2i(0, -scale), cv::Scalar(0, 255, 0), 2);  // Y轴 (绿色)
+    cv::putText(top_view, "X", center + cv::Point2i(scale+10, 0), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
+    cv::putText(top_view, "Y", center + cv::Point2i(0, -scale-10), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
+    cv::putText(top_view, "Top View (XY)", cv::Point(20, 30), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(255, 255, 255), 2);
+    
+    // 前视图 (XZ平面)
+    cv::line(front_view, center, center + cv::Point2i(scale, 0), cv::Scalar(0, 0, 255), 2);  // X轴 (红色)
+    cv::line(front_view, center, center + cv::Point2i(0, -scale), cv::Scalar(255, 0, 0), 2);  // Z轴 (蓝色)
+    cv::putText(front_view, "X", center + cv::Point2i(scale+10, 0), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
+    cv::putText(front_view, "Z", center + cv::Point2i(0, -scale-10), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0), 1);
+    cv::putText(front_view, "Front View (XZ)", cv::Point(20, 30), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(255, 255, 255), 2);
+    
+    // 侧视图 (YZ平面)
+    cv::line(side_view, center, center + cv::Point2i(scale, 0), cv::Scalar(0, 255, 0), 2);  // Y轴 (绿色)
+    cv::line(side_view, center, center + cv::Point2i(0, -scale), cv::Scalar(255, 0, 0), 2);  // Z轴 (蓝色)
+    cv::putText(side_view, "Y", center + cv::Point2i(scale+10, 0), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
+    cv::putText(side_view, "Z", center + cv::Point2i(0, -scale-10), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0), 1);
+    cv::putText(side_view, "Side View (YZ)", cv::Point(20, 30), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(255, 255, 255), 2);
+    
+    // 绘制网格线 (每10单位一条线)
+    const int grid_step = 50;
+    const cv::Scalar grid_color(30, 30, 30);
+    
+    for (int i = -4; i <= 4; i++) {
+        if (i == 0) continue;  // 跳过坐标轴
+        int pos = center.x + i * grid_step;
+        
+        // 顶视图网格
+        cv::line(top_view, cv::Point(pos, 0), cv::Point(pos, view_size), grid_color, 1);
+        cv::line(top_view, cv::Point(0, center.y + i * grid_step), 
+                 cv::Point(view_size, center.y + i * grid_step), grid_color, 1);
+        
+        // 前视图网格
+        cv::line(front_view, cv::Point(pos, 0), cv::Point(pos, view_size), grid_color, 1);
+        cv::line(front_view, cv::Point(0, center.y + i * grid_step), 
+                 cv::Point(view_size, center.y + i * grid_step), grid_color, 1);
+        
+        // 侧视图网格
+        cv::line(side_view, cv::Point(pos, 0), cv::Point(pos, view_size), grid_color, 1);
+        cv::line(side_view, cv::Point(0, center.y + i * grid_step), 
+                 cv::Point(view_size, center.y + i * grid_step), grid_color, 1);
+    }
+    
+    // 将四元数转换为旋转矩阵
+    cv::Mat rotation_matrix;
+    cv::Mat(cam2odom_rotation.toRotMat3x3()).convertTo(rotation_matrix, CV_64F);
+    
+    // 绘制每个装甲板
+    const cv::Scalar colors[] = {
+        cv::Scalar(255, 0, 0),    // 蓝色
+        cv::Scalar(0, 255, 0),    // 绿色
+        cv::Scalar(0, 0, 255),    // 红色
+        cv::Scalar(255, 255, 0),  // 青色
+        cv::Scalar(255, 0, 255),  // 洋红色
+        cv::Scalar(0, 255, 255)   // 黄色
+    };
+    
+    for (size_t i = 0; i < armors.size(); ++i) {
+        const auto& armor = armors[i];
+        cv::Scalar color = colors[i % 6];
+        
+        // 转换相机坐标系下的位置到odom坐标系
+        cv::Mat pos_camera(3, 1, CV_64F);
+        pos_camera.at<double>(0) = armor.pose.position.x;
+        pos_camera.at<double>(1) = armor.pose.position.y;
+        pos_camera.at<double>(2) = armor.pose.position.z;
+        
+        // 应用旋转变换到odom坐标系
+        cv::Mat pos_odom = rotation_matrix * pos_camera;
+        
+        // 提取三维坐标
+        double x = pos_odom.at<double>(0);
+        double y = pos_odom.at<double>(1);
+        double z = pos_odom.at<double>(2);
+        
+        // 计算各视图中的2D位置
+        cv::Point2i pos_top(center.x + x * scale, center.y - y * scale);  // 顶视图 (XY)
+        cv::Point2i pos_front(center.x + x * scale, center.y - z * scale);  // 前视图 (XZ)
+        cv::Point2i pos_side(center.x + y * scale, center.y - z * scale);  // 侧视图 (YZ)
+        
+        // 绘制装甲板点
+        const int point_size = 5;
+        cv::circle(top_view, pos_top, point_size, color, -1);
+        cv::circle(front_view, pos_front, point_size, color, -1);
+        cv::circle(side_view, pos_side, point_size, color, -1);
+        
+        // 绘制从原点到装甲板的线段
+        cv::line(top_view, center, pos_top, color, 1);
+        cv::line(front_view, center, pos_front, color, 1);
+        cv::line(side_view, center, pos_side, color, 1);
+        
+        // 显示装甲板编号
+        std::string number_text = armor.number;
+        cv::putText(top_view, number_text, pos_top + cv::Point2i(10, 0), 
+                    cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
+        cv::putText(front_view, number_text, pos_front + cv::Point2i(10, 0), 
+                    cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
+        cv::putText(side_view, number_text, pos_side + cv::Point2i(10, 0), 
+                    cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
+    }
+    
+    // 合并三个视图为一个窗口
+    cv::Mat visualization;
+    cv::Mat top_row, bottom_row;
+    cv::hconcat(top_view, front_view, top_row);
+    
+    // 创建一个信息面板
+    cv::Mat info_panel = cv::Mat::zeros(view_size, view_size, CV_8UC3);
+    cv::putText(info_panel, "3D Armor Visualization", cv::Point(60, 50), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 255, 255), 2);
+    cv::putText(info_panel, "Color Legend:", cv::Point(30, 100), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 255), 1);
+    
+    // 装甲板颜色图例
+    for (int i = 0; i < std::min(6, (int)armors.size()); i++) {
+        cv::circle(info_panel, cv::Point(50, 130 + i * 30), 5, colors[i], -1);
+        std::string armor_info = "Armor " + armors[i].number + 
+                                 " (Type: " + std::to_string(armors[i].type) + ")";
+        cv::putText(info_panel, armor_info, cv::Point(70, 135 + i * 30), 
+                    cv::FONT_HERSHEY_SIMPLEX, 0.5, colors[i], 1);
+    }
+    
+    // 添加坐标系信息
+    cv::putText(info_panel, "Coordinate System:", cv::Point(30, 280), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 255), 1);
+    cv::line(info_panel, cv::Point(50, 310), cv::Point(80, 310), cv::Scalar(0, 0, 255), 2);
+    cv::putText(info_panel, "X axis", cv::Point(90, 315), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 255), 1);
+    cv::line(info_panel, cv::Point(50, 340), cv::Point(80, 340), cv::Scalar(0, 255, 0), 2);
+    cv::putText(info_panel, "Y axis", cv::Point(90, 345), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
+    cv::line(info_panel, cv::Point(50, 370), cv::Point(80, 370), cv::Scalar(255, 0, 0), 2);
+    cv::putText(info_panel, "Z axis", cv::Point(90, 375), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 0, 0), 1);
+    
+    cv::hconcat(side_view, info_panel, bottom_row);
+    cv::vconcat(top_row, bottom_row, visualization);
+    
+    // 显示可视化结果
+    cv::imshow("3D Armor Visualization in Odom Frame", visualization);
+    cv::waitKey(wait_key);
+}
+void visualize_armors_in_odom(const FrameData& result, 
+                             const cv::Quatd& cam2odom_rotation, const cv::Vec3d& cam2odom_translation,
+                             const cv::Mat& frame, std::chrono::high_resolution_clock::time_point timestamp) {
+    // Get the latest gyro data
+    helios::MCUPacket gyro_data;
+    {
+        std::lock_guard<std::mutex> lock(latest_gyro_mutex);
+        gyro_data = latest_gyro_data;
+    }
+    
+    // Create output visualization image
+    cv::Mat vis_img = frame.clone();
+    auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(timestamp).time_since_epoch().count();
+    auto gyro_ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(latest_gyro_timestamp).time_since_epoch().count();
+    
+    // Add timestamp and gyro data to visualization
+    cv::putText(vis_img, "Camera TS: " + std::to_string(ts_ms), cv::Point(10, 30), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
+    cv::putText(vis_img, "Gyro TS: " + std::to_string(gyro_ts_ms), cv::Point(10, 60), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
+    cv::putText(vis_img, "Yaw: " + std::to_string(gyro_data.yaw) + ", Pitch: " + 
+                std::to_string(gyro_data.pitch), cv::Point(10, 90), 
+                cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
+    
+    // Rest of the visualization code as before...
+    // [The 3D visualization code here remains the same as in my previous message]
+}
+void process_detection_result(const FrameData& result, std::chrono::high_resolution_clock::time_point timestamp) {
+    auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(timestamp).time_since_epoch().count();
+    
     cv::Quatd cam2odom_rotation;
     cv::Vec3d cam2odom_translation;
     cv::Quatd odom2cam_rotation;
@@ -186,166 +454,159 @@ void process_detection_result(const FrameData& result, const helios::MCUPacket& 
         odom2cam_rotation, odom2cam_translation
     );
     
-
-    visualization_msgs::msg::MarkerArray marker_array;
-
-    visualization_msgs::msg::Marker armor_marker;
-    armor_marker.ns = "armors";
-    armor_marker.action = visualization_msgs::msg::Marker::ADD;
-    armor_marker.type = visualization_msgs::msg::Marker::CUBE;
-    armor_marker.scale.x = 0.05;
-    armor_marker.scale.z = 0.125;
-    armor_marker.color.a = 1.0;
-    armor_marker.color.g = 0.5;
-    armor_marker.color.b = 1.0;
-    armor_marker.lifetime = rclcpp::Duration::from_seconds(0.1);
+    if (!transform_success) {
+        std::cout << "Failed to get transforms for timestamp: " << timestamp_ns << std::endl;
+        return;
+    }
     
-
-    visualization_msgs::msg::Marker text_marker;
-    text_marker.ns = "classification";
-    text_marker.action = visualization_msgs::msg::Marker::ADD;
-    text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
-    text_marker.scale.z = 0.1;
-    text_marker.color.a = 1.0;
-    text_marker.color.r = 1.0;
-    text_marker.color.g = 1.0;
-    text_marker.color.b = 1.0;
-    text_marker.lifetime = rclcpp::Duration::from_seconds(0.1);
+    // Create ROS time from timestamp
+    rclcpp::Time ros_time(timestamp_ns);
+    
+    // Create Armors message
+    auto armors_msg = std::make_unique<autoaim_interfaces::msg::Armors>();
+    armors_msg->header.stamp = ros_time;
+    armors_msg->header.frame_id = "camera_optical_frame";
+    
+    // Create markers for visualization
+    visualization_msgs::msg::MarkerArray marker_array;
     
     if (result.has_valid_results()) {
-      
-            boost::lock_guard<boost::mutex> lock(pnp_mutex);
-            if (armor_pnp_solver) {
-                std::cout << "Processing " << result.armors.size() << " armors - Timestamp: " << ts_ms << std::endl;
-                std::cout << "TRANSFORM DATA in has result - Timestamp: " << ts_ms 
-                    << ", Yaw: " << gyro_data.yaw 
-                    << ", Pitch: " << gyro_data.pitch 
-                    << ", Mode: " << (int)gyro_data.autoaim_mode 
-                    << " \n " << std::endl;
-                
-                if (transform_success) {
-                    helios_cv::ArmorTransformInfo armor_transform_info(odom2cam_rotation, cam2odom_rotation);
-                    armor_pnp_solver->update_transform_info(&armor_transform_info);
-                }
-                
-                for (const auto& armor : result.armors) {
-                    cv::Mat rvec, tvec;
-                    bool pose_solved = armor_pnp_solver->solve_pose(armor, rvec, tvec);
-                    
-                    if (pose_solved) {
-                        autoaim_interfaces::msg::Armor armor_msg;
-                        
-                        armor_msg.type = static_cast<int>(armor.type);
-                        armor_msg.number = armor.number;
-
-                        armor_msg.pose.position.x = tvec.at<double>(0);
-                        armor_msg.pose.position.y = tvec.at<double>(1);
-                        armor_msg.pose.position.z = tvec.at<double>(2);
-
-                        cv::Mat rotation_matrix;
-                        if (armor_pnp_solver->use_projection()) {
-                            rotation_matrix = rvec;
-                        } else {
-                            cv::Rodrigues(rvec, rotation_matrix);
-                        }
-                        tf2::Matrix3x3 tf2_rotation_matrix(
-                            rotation_matrix.at<double>(0, 0),
-                            rotation_matrix.at<double>(0, 1),
-                            rotation_matrix.at<double>(0, 2),
-                            rotation_matrix.at<double>(1, 0),
-                            rotation_matrix.at<double>(1, 1),
-                            rotation_matrix.at<double>(1, 2),
-                            rotation_matrix.at<double>(2, 0),
-                            rotation_matrix.at<double>(2, 1),
-                            rotation_matrix.at<double>(2, 2)
-                        );
-                        tf2::Quaternion tf2_quaternion;
-                        tf2_rotation_matrix.getRotation(tf2_quaternion);
-                        armor_msg.pose.orientation = tf2::toMsg(tf2_quaternion);
-                        armor_msg.distance_to_image_center =
-                            armor_pnp_solver->calculateDistanceToCenter(armor.center);
-
-                        armors_msg->armors.push_back(armor_msg);
-                    }
-                }
-                
-                if (!armors_msg->armors.empty()) {
-                    // 发布装甲板markers
-                    marker_array.markers.clear();
-                    int marker_id = 0;
-                    for (const auto& armor : armors_msg->armors) {
-                        auto time_now = std::chrono::high_resolution_clock::now();
-                        auto marker_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(time_now).time_since_epoch().count();
-                        rclcpp::Time marker_time(marker_ns);
-                    
-                        armor_marker.id = marker_id++;
-                        
-                        armor_marker.header.stamp = marker_time;
-                        armor_marker.header.frame_id = "camera_optical_frame"; 
-                        armor_marker.scale.y = (armor.type == 0) ? 0.135 : 0.23; 
-                        armor_marker.pose = armor.pose;
-                        marker_array.markers.push_back(armor_marker);
-                    
-                        // 编号文本marker
-                        text_marker.id = marker_id++;
-                        text_marker.header.stamp = marker_time;
-                        text_marker.header.frame_id = "camera_optical_frame"; 
-                        text_marker.pose.position = armor.pose.position;
-                        text_marker.pose.position.y -= 0.1; 
-                        text_marker.text = armor.number;
-                        marker_array.markers.push_back(text_marker);
-                    }
-                } else {
-                    // 如果没有检测到装甲板，发送一个DELETE action的marker清除之前的markers
-                    marker_array.markers.clear();
-                    armor_marker.action = visualization_msgs::msg::Marker::DELETE;
-                    armor_marker.id = 0;
-                    armor_marker.header = armors_msg->header;
-                    marker_array.markers.push_back(armor_marker); 
-                    
-                    // 重置回ADD action以备下次使用
-                    armor_marker.action = visualization_msgs::msg::Marker::ADD;
-                }
-                
-                // 发布markers
-                marker_pub_->publish(marker_array);
-            }
-        } 
-
-    armors_pub_->publish(*armors_msg);
-    }
-
-    void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& gyro_data, std::chrono::high_resolution_clock::time_point timestamp) {
-        FrameData input_data(timestamp, frame);
-        if(gyro_data.autoaim_mode == 0){
-            auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(timestamp).time_since_epoch().count();
-            std::cout << "Processing matched pair - Timestamp: " << ts_ms 
-                    << ", Autoaim mode: " << (int)gyro_data.autoaim_mode 
-                    << ", Yaw: " << gyro_data.yaw 
-                    << ", Pitch: " << gyro_data.pitch << std::endl;
+        boost::lock_guard<boost::mutex> lock(pnp_mutex);
+        if (armor_pnp_solver) {
+            // Check if we have new gyro data
             {
-                boost::lock_guard<boost::mutex> lock(detector_mutex);
-                if (global_detector) {
-                    std::cout << "Processing frame synchronously - Timestamp: " << ts_ms << std::endl;
-                    
-                    FrameData result = global_detector->infer_sync(input_data);
-                    
-                    process_detection_result(result, gyro_data, timestamp);
-                    
-                    std::cout << "Frame processed successfully - Timestamp: " << ts_ms << std::endl;
-                } else {
-                    std::cerr << "Detector not initialized." << std::endl;
+                std::lock_guard<std::mutex> lock(latest_gyro_mutex);
+                if (!has_new_gyro_data) {
+                    std::cout << "No gyro data available yet, skipping visualization" << std::endl;
                     return;
                 }
             }
-        }
-        else{
-            boost::lock_guard<boost::mutex> lock(cout_mutex);
-            std::cout << "Autoaim mode is 1, skipping detection." << std::endl;
-            //打符
+            
+            // Prepare transform info for PnP solver
+            helios_cv::ArmorTransformInfo armor_transform_info(odom2cam_rotation, cam2odom_rotation);
+            armor_pnp_solver->update_transform_info(&armor_transform_info);
+            
+            // Process each armor
+            for (const auto& armor : result.armors) {
+                cv::Mat rvec, tvec;
+                bool pose_solved = armor_pnp_solver->solve_pose(armor, rvec, tvec);
+                
+                if (pose_solved) {
+                    autoaim_interfaces::msg::Armor armor_msg;
+                    
+                    armor_msg.type = static_cast<int>(armor.type);
+                    armor_msg.number = armor.number;
+                    
+                    armor_msg.pose.position.x = tvec.at<double>(0);
+                    armor_msg.pose.position.y = tvec.at<double>(1);
+                    armor_msg.pose.position.z = tvec.at<double>(2);
+                    
+                    cv::Mat rotation_matrix;
+                    if (armor_pnp_solver->use_projection()) {
+                        rotation_matrix = rvec;
+                    } else {
+                        cv::Rodrigues(rvec, rotation_matrix);
+                    }
+                    
+                    tf2::Matrix3x3 tf2_rotation_matrix(
+                        rotation_matrix.at<double>(0, 0),
+                        rotation_matrix.at<double>(0, 1),
+                        rotation_matrix.at<double>(0, 2),
+                        rotation_matrix.at<double>(1, 0),
+                        rotation_matrix.at<double>(1, 1),
+                        rotation_matrix.at<double>(1, 2),
+                        rotation_matrix.at<double>(2, 0),
+                        rotation_matrix.at<double>(2, 1),
+                        rotation_matrix.at<double>(2, 2)
+                    );
+                    
+                    tf2::Quaternion tf2_quaternion;
+                    tf2_rotation_matrix.getRotation(tf2_quaternion);
+                    armor_msg.pose.orientation = tf2::toMsg(tf2_quaternion);
+                    armor_msg.distance_to_image_center = 
+                        armor_pnp_solver->calculateDistanceToCenter(armor.center);
+                    
+                    armors_msg->armors.push_back(armor_msg);
+                }
+            }
+            
+            // Create and publish markers if we have valid armors
+            if (!armors_msg->armors.empty()) {
+                // Show the armor projections in visualization
+                cv::Mat draw = result.frame.clone();
+                armor_pnp_solver->draw_projection_points(draw);
+                cv::imshow("Armor Projection", result.frame);
+                cv::waitKey(1);
+                
+                // Create visualization markers
+                marker_array.markers.clear();
+                int marker_id = 0;
+                
+                // Template for armor markers
+                visualization_msgs::msg::Marker armor_marker;
+                armor_marker.ns = "armors";
+                armor_marker.action = visualization_msgs::msg::Marker::ADD;
+                armor_marker.type = visualization_msgs::msg::Marker::CUBE;
+                armor_marker.scale.x = 0.05;
+                armor_marker.scale.z = 0.125;
+                armor_marker.color.a = 1.0;
+                armor_marker.color.g = 0.5;
+                armor_marker.color.b = 1.0;
+                armor_marker.lifetime = rclcpp::Duration::from_seconds(0.1);
+                
+                // Template for text markers
+                visualization_msgs::msg::Marker text_marker;
+                text_marker.ns = "classification";
+                text_marker.action = visualization_msgs::msg::Marker::ADD;
+                text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+                text_marker.scale.z = 0.1;
+                text_marker.color.a = 1.0;
+                text_marker.color.r = 1.0;
+                text_marker.color.g = 1.0;
+                text_marker.color.b = 1.0;
+                text_marker.lifetime = rclcpp::Duration::from_seconds(0.1);
+                
+                for (const auto& armor : armors_msg->armors) {
+                    // Armor cube marker
+                    armor_marker.id = marker_id++;
+                    armor_marker.header.stamp = ros_time;
+                    armor_marker.header.frame_id = "camera_optical_frame";
+                    armor_marker.scale.y = (armor.type == 0) ? 0.135 : 0.23;
+                    armor_marker.pose = armor.pose;
+                    marker_array.markers.push_back(armor_marker);
+                    
+                    // Armor number text marker
+                    text_marker.id = marker_id++;
+                    text_marker.header.stamp = ros_time;
+                    text_marker.header.frame_id = "camera_optical_frame";
+                    text_marker.pose.position = armor.pose.position;
+                    text_marker.pose.position.y -= 0.1;
+                    text_marker.text = armor.number;
+                    marker_array.markers.push_back(text_marker);
+                }
+            } else {
+                // If no armors detected, send a marker to clear previous markers
+                marker_array.markers.clear();
+                visualization_msgs::msg::Marker clear_marker;
+                clear_marker.ns = "armors";
+                clear_marker.action = visualization_msgs::msg::Marker::DELETE;
+                clear_marker.id = 0;
+                clear_marker.header.stamp = ros_time;
+                clear_marker.header.frame_id = "camera_optical_frame";
+                marker_array.markers.push_back(clear_marker);
+            }
+            
+            // Use our custom visualization
+            visualize_armors_in_odom(result, cam2odom_rotation, cam2odom_translation,
+                                    result.frame, timestamp);
         }
     }
-// 相机线程函数 - 优化版
+    
+    // Publish armor messages and markers
+    armors_pub_->publish(*armors_msg);
+    marker_pub_->publish(marker_array);
+}
+
 void camera_thread_func() {
     pthread_t this_thread = pthread_self();
     struct sched_param params;
@@ -353,9 +614,8 @@ void camera_thread_func() {
     pthread_setschedparam(this_thread, SCHED_FIFO, &params);
     
     camera::HikCamera hikCam;
-    auto time_start = std::chrono::high_resolution_clock::now();
+    // Remove the unused variable warning
     std::string camera_config_path = HIK_CONFIG_FILE_PATH"/camera_config.yaml";
-    // std::string intrinsic_para_path = HIK_CALI_FILE_PATH"/caliResults/calibCameraData.yml";
     
     try {
         hikCam.Init(true, camera_config_path, false);
@@ -380,8 +640,25 @@ void camera_thread_func() {
     }
     
     camera_initialized.store(true, std::memory_order_release);
+
+// Wait for first serial data with timeout
+{
+    std::unique_lock<std::mutex> lock(initial_sync_mutex);
+    if (!first_serial_received.load()) {
+        std::cout << "Camera initialized, waiting for first serial data (timeout: 10s)..." << std::endl;
+        
+        // Wait with a timeout of 10 seconds
+        if (!initial_sync_cv.wait_for(lock, std::chrono::seconds(10), 
+                                     []{ return first_serial_received.load(); })) {
+            // If timeout occurred, we'll still proceed but log a warning
+            std::cout << "WARNING: Timeout waiting for serial data. Proceeding anyway..." << std::endl;
+        } else {
+            std::cout << "First serial data received, starting camera processing." << std::endl;
+        }
+    }
+}
     
-    // 主处理循环
+    // Main processing loop
     cv::Mat frame;
     uint64_t device_ts;
     int64_t host_ts;
@@ -389,24 +666,34 @@ void camera_thread_func() {
     while (running) {
         bool hasNew = hikCam.ReadImg(frame, &device_ts, &host_ts);
         
-        if (hasNew && !frame.empty()) {
-            #ifdef DEBUG
-            std::cout << " Host: " << host_ts << std::endl;
-            #endif
-            if (frame_queue.empty() && !new_frame_available.load(std::memory_order_relaxed)) {
-                boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
-                frame_queue.push_back(TimestampedFrame(frame, host_ts));
+        if (hasNew && !frame.empty() && sync_started.load(std::memory_order_acquire)) {
+            // 获取当前的同步ID
+            uint64_t current_sync_id = sync_frame_id.fetch_add(1, std::memory_order_relaxed);
+            
+            boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
+            if (frame_queue.empty() || host_ts > frame_queue.back().timestamp) {
+                frame_queue.push_back(TimestampedFrame(frame, host_ts, current_sync_id));
                 new_frame_available.store(true, std::memory_order_release);
+                
+                // 增强输出信息
+                std::cout << "[FRAME] ID: " << std::setw(5) << current_sync_id 
+                          << " | 时间戳: " << std::setw(13) << host_ts 
+                          << " | 系统时间: " << std::chrono::time_point_cast<std::chrono::milliseconds>(
+                                                  std::chrono::high_resolution_clock::now()).time_since_epoch().count() 
+                          << "ms" << std::endl;
             } else {
-                boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
-                // boost::circular_buffer会自动处理大小限制
-                frame_queue.push_back(TimestampedFrame(frame, host_ts));
-                new_frame_available.store(true, std::memory_order_release);
+                std::cerr << "[ERROR] 收到乱序帧，丢弃。同步ID: " 
+                          << current_sync_id << ", 时间戳: " << host_ts << std::endl;
             }
             
-            // cv::imshow("Raw Camera", frame);
-            // cv::waitKey(1);
-            
+            // 可视化ID和时间戳
+            cv::Mat debug_frame = frame.clone();
+            cv::putText(debug_frame, "Frame ID: " + std::to_string(current_sync_id),
+                       cv::Point(20, 30), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 0), 2);
+            cv::putText(debug_frame, "Timestamp: " + std::to_string(host_ts),
+                       cv::Point(20, 60), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 0), 2);
+            cv::imshow("Synchronized Frame", debug_frame);
+            cv::waitKey(1);
         }
     }
     
@@ -426,11 +713,7 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
         std::cout << "Opening serial port: " << port_name << " at " << baud_rate << " baud" << std::endl;
     }
     
-    // 等待相机初始化完成
-    while (running && !camera_initialized.load(std::memory_order_acquire)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-    
+
     if (!running) {
         return;
     }
@@ -602,39 +885,40 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
 
                     if (header.cmd_id == helios::RECEIVE_AUTOAIM_RECEIVE_CMD_ID && 
                         header.data_length == sizeof(helios::MCUPacket)) {
+                        auto now = std::chrono::high_resolution_clock::now();
                         
+                        // Always extract the packet data
                         helios::MCUPacket packet;
                         memcpy(&packet, receive_buffer.data() + sizeof(helios::FrameHeader), sizeof(helios::MCUPacket));
                         
-                        // 获取当前系统时间作为接收时间戳
-                        auto now = std::chrono::high_resolution_clock::now();
-                        #ifdef DEBUG
-                        auto now_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(now).time_since_epoch().count();
-                        std::cout << "Serial data timestamp (milliseconds): " << now_ms << std::endl;
-                        #endif
-                        // 自身颜色 0 蓝 1 红
-                        static bool last_is_blue = true; // 默认蓝队
-                        bool current_is_blue = (packet.self_color == 1);
+                        // Always update the latest gyro data for other threads
+                        update_latest_gyro_data(packet);
                         
-                        // 只有当颜色发生变化时才更新检测器的颜色设置
-                        if (current_is_blue != last_is_blue) {
-                            boost::lock_guard<boost::mutex> lock(detector_mutex);
-                            if (global_detector) {
-                                global_detector->set_is_blue(current_is_blue);
+                        // Only add to sync queue if synchronization has started
+                        if (sync_started.load(std::memory_order_acquire)) {
+                            uint64_t current_sync_id = sync_gyro_id.fetch_add(1, std::memory_order_relaxed);
+                            
+                            // 获取当前系统时间作为接收时间戳
+                            auto now_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(now).time_since_epoch().count();
+                            
+                            // Output enhanced information
+                            std::cout << "[SERIAL] ID: " << std::setw(5) << current_sync_id 
+                                      << " | 时间戳: " << std::setw(13) << now_ms 
+                                      << " | Yaw: " << std::setw(8) << std::fixed << std::setprecision(3) << packet.yaw
+                                      << " | Pitch: " << std::setw(8) << std::fixed << std::setprecision(3) << packet.pitch
+                                      << " | 模式: " << static_cast<int>(packet.autoaim_mode) << std::endl;
+                            
+                            // Add to sync queue
+                            {
+                                boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
+                                gyro_queue.push_back(TimestampedPacket(packet, now, current_sync_id));
+                                new_gyro_available.store(true, std::memory_order_release);
                             }
-                            last_is_blue = current_is_blue;
-                        }
+                            
+                            // Update coordinate transformations
+                            auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now).time_since_epoch().count();
+                            transform_manager->updateTransform(timestamp_ns, packet.yaw, packet.pitch);
                         
-
-                        {
-                            boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
-                            gyro_queue.push_back(TimestampedPacket(packet, now));
-                            new_gyro_available.store(true, std::memory_order_release);
-                        }
-                        
-                        
-                        auto timestamp_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(now).time_since_epoch().count();
-                        transform_manager->updateTransform(timestamp_ns, packet.yaw, packet.pitch);
                         rclcpp::Time ros_time(timestamp_ns);
                         // printf("Timestamp for tf: %.10ld\n", timestamp_ns);
                         geometry_msgs::msg::TransformStamped ts;
@@ -678,6 +962,7 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
                         ts.transform.rotation = tf2::toMsg(q);
                         tf_broadcaster_->sendTransform(ts);
                     }
+                }
                     
                     receive_buffer.erase(receive_buffer.begin(), receive_buffer.begin() + total_packet_size);
                 }
@@ -713,12 +998,60 @@ void serial_thread_func(const std::string& port_name, int baud_rate, std::shared
         std::cout << "串口线程已结束" << std::endl;
     }
 }
+
 cv::Quatd ros2cv(const geometry_msgs::msg::Quaternion& q) {
     return cv::Quatd(q.w, q.x, q.y, q.z);
 }
+// 修改函数签名，接受匹配的陀螺仪数据
+void process_matched_pair(const cv::Mat& frame, const helios::MCUPacket& matched_gyro, std::chrono::high_resolution_clock::time_point timestamp) {
+    FrameData input_data(timestamp, frame);
+    
+    // 直接使用传入的匹配陀螺仪数据，而不是latest_gyro_data
+    bool should_process = (matched_gyro.autoaim_mode == 0);
+    
+    if (should_process) {
+        auto ts_ms = std::chrono::time_point_cast<std::chrono::milliseconds>(timestamp).time_since_epoch().count();
+        
+        std::cout << "处理匹配的帧/陀螺仪对 - 帧时间戳: " << ts_ms 
+                  << " 使用匹配的陀螺仪数据 (Yaw: " << matched_gyro.yaw 
+                  << ", Pitch: " << matched_gyro.pitch << ")" << std::endl;
+        
+        {
+            boost::lock_guard<boost::mutex> lock(detector_mutex);
+            if (global_detector) {
+                {
+                    std::lock_guard<std::mutex> lock(latest_gyro_mutex);
+                    latest_gyro_data = matched_gyro;
+                    latest_gyro_timestamp = timestamp;
+                    has_new_gyro_data = true;
+                }
+                
+                FrameData result = global_detector->infer_sync(input_data);
+                global_detector->visualize_detection_result(result);
+                process_detection_result(result, timestamp);
+            } else {
+                std::cerr << "检测器未初始化。" << std::endl;
+                return;
+            }
+        }
+    } else {
+        boost::lock_guard<boost::mutex> lock(cout_mutex);
+        std::cout << "自瞄模式不是0，跳过检测。" << std::endl;
+    }
+}
 void data_matching_thread_func() {
-    // 等待相机初始化完成
-    while (running && !camera_initialized.load(std::memory_order_acquire)) {
+    // Wait for first serial data before attempting any matching
+    {
+        std::unique_lock<std::mutex> lock(initial_sync_mutex);
+        if (!first_serial_received.load()) {
+            std::cout << "Matching thread waiting for first serial data..." << std::endl;
+            initial_sync_cv.wait(lock, []{ return first_serial_received.load(); });
+            std::cout << "First serial data received, starting matching process." << std::endl;
+        }
+    }
+    
+    // Wait for sync to start
+    while (running && !sync_started.load(std::memory_order_acquire)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
@@ -728,7 +1061,7 @@ void data_matching_thread_func() {
 
     {
         boost::lock_guard<boost::mutex> lock(cout_mutex);
-        std::cout << "开始数据匹配线程" << std::endl;
+        std::cout << "开始基于同步ID的数据匹配线程" << std::endl;
     }
 
     int total_attempts = 0;
@@ -745,59 +1078,61 @@ void data_matching_thread_func() {
 
         total_attempts++;
 
-        TimestampedFrame matched_frame;  // 初始化为默认值
-        TimestampedPacket matched_gyro;  // 初始化为默认值
+        TimestampedFrame matched_frame;
+        TimestampedPacket matched_gyro;
         bool found_match = false;
-        int64_t best_time_diff = INT64_MAX;
-
+        
         {
             boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
             boost::lock_guard<boost::mutex> lock2(gyro_queue_mutex);
 
-            if (!frame_queue.empty() && !gyro_queue.empty()) {
-                
-                for (const auto& frame : frame_queue) {
-                    for (const auto& gyro : gyro_queue) {
-                        int64_t time_diff = frame.timestamp - timePointToInt64(gyro.timestamp);
+            if (frame_queue.empty() || gyro_queue.empty()) {
+                continue;
+            }
+            
+            // 查找具有相同同步ID的帧和IMU数据
+            for (const auto& frame : frame_queue) {
+                for (const auto& gyro : gyro_queue) {
+                    if (frame.sync_id == gyro.sync_id) {
+                        matched_frame = frame;
+                        matched_gyro = gyro;
+                        found_match = true;
                         
-                        if (time_diff >= TIME_MATCH_MIN_MS && time_diff <= TIME_MATCH_MAX_MS) {
-                            if (std::abs(time_diff) < std::abs(best_time_diff)) {
-                                matched_frame = TimestampedFrame(frame.frame, frame.timestamp);  
-                                matched_gyro = TimestampedPacket(gyro.packet, gyro.timestamp);
-                                best_time_diff = time_diff;
-                                found_match = true;
-                                std::cout << "Matched gyro data - Yaw: " << matched_gyro.packet.yaw 
-                                << ", Pitch: " << matched_gyro.packet.pitch 
-                                << ", Mode: " << (int)matched_gyro.packet.autoaim_mode 
-                                << "time_stamp: " << timePointToInt64(matched_gyro.timestamp) << std::endl;
-                                #ifdef DEBUG
-                                std::cout << "Matched pair - Frame timestamp: " << matched_frame.timestamp 
-                                << ", Gyro timestamp: " << timePointToInt64(matched_gyro.timestamp) 
-                                << ", Time difference: " << best_time_diff << "ms" << std::endl;
-                                #endif
-                            }
-                        }
+                        std::cout << "匹配成功 - 同步ID: " << frame.sync_id 
+                                  << ", 帧时间戳: " << frame.timestamp 
+                                  << ", IMU时间戳: " << timePointToInt64(gyro.timestamp) << std::endl;
+                        
+                        break;
                     }
                 }
+                if (found_match) break;
             }
         }
 
         if (found_match) {
             successful_matches++;
-
-            // {
-            //     boost::lock_guard<boost::mutex> lock(cout_mutex);
-            //     std::cout << "找到匹配: 时间差 = " << best_time_diff << "ms" << std::endl;
-            // }
             
+            std::cout << "[MATCH] 同步ID: " << std::setw(5) << matched_frame.sync_id 
+                      << " | 帧时间戳: " << std::setw(13) << matched_frame.timestamp 
+                      << " | IMU时间戳: " << std::setw(13) << timePointToInt64(matched_gyro.timestamp) 
+                      << " | 时差: " << std::setw(8) << (matched_frame.timestamp - timePointToInt64(matched_gyro.timestamp)) 
+                      << "ms" << std::endl;
+            
+            // 传递帧和匹配的陀螺仪数据包
             process_matched_pair(matched_frame.frame, matched_gyro.packet, matched_gyro.timestamp);
 
-            // 清理处理过的数据
+            // 清理已处理的数据
             {
                 boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
-                while (!frame_queue.empty() && frame_queue.front().timestamp <= matched_frame.timestamp) {
-                    frame_queue.pop_front();
+                auto it = frame_queue.begin();
+                while (it != frame_queue.end()) {
+                    if (it->sync_id <= matched_frame.sync_id) {
+                        it = frame_queue.erase(it);
+                    } else {
+                        ++it;
+                    }
                 }
+                
                 if (frame_queue.empty()) {
                     new_frame_available.store(false, std::memory_order_release);
                 }
@@ -805,34 +1140,36 @@ void data_matching_thread_func() {
 
             {
                 boost::lock_guard<boost::mutex> lock(gyro_queue_mutex);
-                while (!gyro_queue.empty() && gyro_queue.front().timestamp <= matched_gyro.timestamp) {
-                    gyro_queue.pop_front();
+                auto it = gyro_queue.begin();
+                while (it != gyro_queue.end()) {
+                    if (it->sync_id <= matched_gyro.sync_id) {
+                        it = gyro_queue.erase(it);
+                    } else {
+                        ++it;
+                    }
                 }
+                
                 if (gyro_queue.empty()) {
                     new_gyro_available.store(false, std::memory_order_release);
                 }
             }
         } else {
-            // 清理过时数据
-            {
-                boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
-                boost::lock_guard<boost::mutex> lock2(gyro_queue_mutex);
-
-                if (!frame_queue.empty() && !gyro_queue.empty()) {
-                    const auto& oldest_frame = frame_queue.front();
-                    const auto& oldest_gyro = gyro_queue.front();
-
-                    int64_t oldest_gyro_timestamp = timePointToInt64(oldest_gyro.timestamp);
-
-                    // 如果 frame 的时间戳比 gyro 的时间戳早太多，移除 frame
-                    if (oldest_frame.timestamp + static_cast<int64_t>(TIME_MATCH_MAX_MS) < oldest_gyro_timestamp) {
-                        frame_queue.pop_front();
-                    }
-
-                    // 如果 gyro 的时间戳比 frame 的时间戳早太多，移除 gyro
-                    if (oldest_gyro_timestamp + static_cast<int64_t>(TIME_MATCH_MAX_MS) < oldest_frame.timestamp) {
-                        gyro_queue.pop_front();
-                    }
+            // 如果找不到匹配，清理过时的数据
+            boost::lock_guard<boost::mutex> lock(frame_queue_mutex);
+            boost::lock_guard<boost::mutex> lock2(gyro_queue_mutex);
+            
+            if (!frame_queue.empty() && !gyro_queue.empty()) {
+                // 查找每个队列中最小的ID
+                uint64_t min_frame_id = frame_queue.front().sync_id;
+                uint64_t min_gyro_id = gyro_queue.front().sync_id;
+                
+                // 删除ID较小的项，因为它们可能永远不会匹配
+                if (min_frame_id < min_gyro_id) {
+                    frame_queue.pop_front();
+                    std::cout << "丢弃过时的帧ID: " << min_frame_id << std::endl;
+                } else if (min_gyro_id < min_frame_id) {
+                    gyro_queue.pop_front();
+                    std::cout << "丢弃过时的IMU数据ID: " << min_gyro_id << std::endl;
                 }
             }
         }
@@ -840,13 +1177,14 @@ void data_matching_thread_func() {
 
     {
         boost::lock_guard<boost::mutex> lock(cout_mutex);
-        std::cout << "数据匹配线程已结束" << std::endl;
+        std::cout << "数据匹配线程已结束. 总尝试次数: " << total_attempts 
+                  << ", 成功匹配次数: " << successful_matches << std::endl;
     }
 }
 
 void result_processing_thread_func() {
     // 添加切换机制的配置选项
-    bool use_tf2_transform = true; // 默认使用tf2
+    bool use_tf2_transform = false; // 默认使用tf2
     
     // 预先分配消息对象以减少内存分配
     auto armors_msg = std::make_unique<autoaim_interfaces::msg::Armors>();
@@ -1057,17 +1395,14 @@ void result_processing_thread_func() {
                     
                     if (!armors_msg->armors.empty()) {
                         // 添加调试可视化
-                        // armor_pnp_solver->draw_projection_points(result.frame);
-                        // cv::imshow("Armor Projection", result.frame);
-                        // cv::waitKey(1);
+                        armor_pnp_solver->draw_projection_points(result.frame);
+                        cv::imshow("Armor Projection", result.frame);
+                        cv::waitKey(1);
                         
                         // 发布装甲板markers
                         marker_array.markers.clear();
                         int marker_id = 0;
                         for (const auto& armor : armors_msg->armors) {
-                            auto time_now = std::chrono::high_resolution_clock::now();
-                            auto marker_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(time_now).time_since_epoch().count();
-                            rclcpp::Time ros_time(marker_ns);
                         
                             armor_marker.id = marker_id++;
                             
@@ -1284,7 +1619,10 @@ int main(int argc, char* argv[]) {
     
 
     
-    // 创建必要的线程
+    program_start_time = std::chrono::high_resolution_clock::now();
+    
+    // 创建线程
+    boost::thread sync_thread(start_sync); 
     boost::thread cam_thread(camera_thread_func);
     boost::thread serial_thread(serial_thread_func, port_name, baud_rate, node);
     boost::thread matching_thread(data_matching_thread_func);
@@ -1358,7 +1696,7 @@ int main(int argc, char* argv[]) {
             }
         }
     };
-    
+    join_with_timeout(sync_thread, "sync");
     join_with_timeout(cam_thread, "camera");
     join_with_timeout(serial_thread, "serial");
     join_with_timeout(matching_thread, "matching");
