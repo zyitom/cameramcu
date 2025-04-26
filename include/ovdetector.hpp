@@ -40,28 +40,32 @@ struct Object
     float conf;
 };
 
-struct FrameData {
-    std::chrono::system_clock::time_point timestamp;
-    cv::Mat frame;                       // 输入图像
-    std::vector<Armor> armors;         // 检测结果
-    bool processed = false;              // 是否已处理完成
-    
-    FrameData(const std::chrono::system_clock::time_point& ts, const cv::Mat& img)
-        : timestamp(ts), frame(img) {}
+class FrameData {
+    public:
+        std::chrono::high_resolution_clock::time_point timestamp;
+        cv::Mat frame;
+        std::vector<Armor> armors;
+        bool processed;
+        uint64_t sync_id;  // 添加同步ID
         
-    // 默认构造函数
-    FrameData() = default;
-    
-    // 添加检测结果
-    void add_armor_results(const std::vector<Armor>& armors) {
-        this->armors = armors;
-        processed = true;
-    }
-    
-    bool has_valid_results() const {
-        return processed && !armors.empty();  
-    }
-};
+        FrameData() : processed(false), sync_id(UINT64_MAX) {}
+        
+        FrameData(std::chrono::high_resolution_clock::time_point ts, const cv::Mat& f) 
+            : timestamp(ts), frame(f), processed(false), sync_id(UINT64_MAX) {}
+        
+        // 添加包含同步ID的构造函数
+        FrameData(std::chrono::high_resolution_clock::time_point ts, const cv::Mat& f, uint64_t id) 
+            : timestamp(ts), frame(f), processed(false), sync_id(id) {}
+        
+        void add_armor_results(const std::vector<Armor>& detected_armors) {
+            armors = detected_armors;
+            processed = true;
+        }
+        
+        bool has_valid_results() const {
+            return processed && !armors.empty();
+        }
+    };
 
 class OVnetDetector {
 public:
@@ -74,6 +78,7 @@ public:
     std::pair<int, int> get_input_size() const;
     cv::Mat visualize_detection_result(const FrameData& frame_data);
     void set_is_blue(bool is_blue);
+    FrameData infer_sync(const FrameData& input_data);
 private:
     // 单次的推理请求
     struct TimedIreq {

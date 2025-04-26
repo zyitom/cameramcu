@@ -22,7 +22,7 @@ private:
     mutable std::mutex mutex; // Make mutex mutable so it can be locked in const methods
     
     // Maximum cache size - set to 10 as requested
-    const size_t MAX_CACHE_SIZE = 10;
+    const size_t MAX_CACHE_SIZE = 60;
     
     // Helper method to rotate a vector using quaternion
     cv::Vec3d rotateVector(const cv::Quatd& q, const cv::Vec3d& v) const {

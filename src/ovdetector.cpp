@@ -85,7 +85,44 @@ ov::Tensor OVnetDetector::preprocess_frame(const cv::Mat& input_frame, const ov:
     cv::resize(input_frame, resized_frame, cv::Size(input_shape[2], input_shape[1]), 0, 0, cv::INTER_LINEAR);
     return ov::Tensor(ov::element::u8, input_shape, resized_frame.data);
 }
-
+FrameData OVnetDetector::infer_sync(const FrameData& input_data) {
+    if (!initialized_) {
+        throw std::runtime_error("Detector not initialized. Call initialize() first.");
+    }
+    
+    // Create a copy of input to preserve timestamp and frame
+    FrameData result = input_data;
+    
+    try {
+        // Preprocess the frame
+        ov::Tensor preprocessed = preprocess_frame(input_data.frame, input_shape_);
+        
+        // Use a local inference request directly from compiled_model_ instead of the pool
+        // This avoids potential ownership issues with the ireq pointer
+        ov::InferRequest infer_request = compiled_model_.create_infer_request();
+        
+        // Set the input tensor for inference
+        infer_request.set_input_tensor(preprocessed);
+        
+        // Start synchronous inference
+        infer_request.infer();
+        
+        // Get the output tensor
+        auto output_tensor = infer_request.get_output_tensor();
+        
+        // Process the output to get armor detections
+        std::vector<Armor> detected_armors = process_output(output_tensor);
+        
+        // Add results to the output frame
+        result.add_armor_results(detected_armors);
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error during synchronous inference: " << e.what() << std::endl;
+        result.processed = true;  // Mark as processed but with empty armor vector
+    }
+    
+    return result;
+}
 std::future<FrameData> OVnetDetector::submit_frame_async(const FrameData& input_data) {
     auto promise_ptr = std::make_shared<std::promise<FrameData>>();
     std::future<FrameData> future = promise_ptr->get_future();
